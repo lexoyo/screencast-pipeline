@@ -64,6 +64,7 @@ class Config:
 
     # -- face image target
     face_luma_target: float
+    face_offset: float | None
 
     # -- framing
     pip_scale: float
@@ -155,6 +156,7 @@ def load(config_path: Path, overrides: dict[str, str] | None = None) -> Config:
         audio_tp=_num(raw, "AUDIO_TP", "-1.5", float),
         audio_lra=_num(raw, "AUDIO_LRA", "11", float),
         face_luma_target=_num(raw, "FACE_LUMA_TARGET", "120", float),
+        face_offset=(float(raw["FACE_OFFSET"]) if raw.get("FACE_OFFSET") else None),
         pip_scale=_num(raw, "PIP_SCALE", "0.22", float),
         pip_margin=_num(raw, "PIP_MARGIN", "28", int),
         pip_corner=pip_corner,

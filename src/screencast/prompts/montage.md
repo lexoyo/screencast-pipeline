@@ -42,7 +42,7 @@ Output schema (exact keys):
       "start": sec, "end": sec,                // original source seconds, contiguous, in order
       "drop": true | false,                    // true = removed from final
       "scene": "ecran" | "large" | "serre",    // ignored when drop=true
-      "reason": "filler|silence|falsestart|repeat|ecran|large|serre",
+      "reason": "filler|falsestart|repeat|fumble|ecran|large|serre",
       "list_item": { "n": 3, "label": "..." }  // OPTIONAL, see below. omit or null otherwise
     }
   ]
@@ -55,7 +55,19 @@ Output schema (exact keys):
   boundaries from `words` (e.g. drop from the start of the abandoned phrase to the start of
   the corrected one).
 - **Drop**: fillers ("euh", "heu", "hum", "uh", "um", "bah", "en fait" chains), false starts,
-  immediate repeats, and any `silences` entry longer than a beat. Never drop mid-word.
+  immediate repeats, and fumbles (below). Never drop mid-word.
+- **Do NOT drop silences, and never give "silence" as a reason.** Quiet gaps are measured
+  from the audio signal and removed by the renderer, which is the only thing that can tell a
+  pause from speech. You cannot: whisper stretches a word across the pause that follows it,
+  so a long word in `words` looks exactly like a gap. On a real shoot this cost 74 seconds of
+  speech, deleted because a 0.2 s word was timed at 1.4 s. The `silences` array is given to
+  you as *context* — to place a cut boundary on a quiet moment — never as something to remove.
+- **`fumble` — the speaker gets stuck.** A stretch where nothing lands: an option that will
+  not click, a login that fails, a search that returns nothing, narrated as it happens ("bon,
+  ça marche pas… pourquoi il veut pas… bref"). Drop it and say `fumble`. It is the one reason
+  that may span tens of seconds, and it exists so you never have to disguise an editorial cut
+  as a technical one. Keep the outcome if there is one ("ah voilà, ça marche") — the viewer
+  needs the resolution, not the struggle.
 - **Keep the opening**: NEVER drop the greeting or the first spoken words ("Salut/Bonjour tout
   le monde", "Hi everyone"…). The video must start on real speech, not mid-sentence.
 - **Drop trailing / unfinished bits**: if the speaker trails off or abandons a sentence

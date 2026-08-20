@@ -15,7 +15,18 @@ import os
 import sys
 from pathlib import Path
 
-from . import measure, montage, publish, render, shotcut, silences, subtitles, timeline, transcribe
+from . import (
+    cuts,
+    measure,
+    montage,
+    publish,
+    render,
+    shotcut,
+    silences,
+    subtitles,
+    timeline,
+    transcribe,
+)
 from .config import ConfigError, describe, load
 from .episode import Episode, MissingInput
 from .shell import ToolError, log, set_log_file
@@ -70,8 +81,25 @@ def _newest_recording(folder: Path) -> Path | None:
 
 
 def _plan(ep: Episode):
-    """Load the edit decision list and persist the segments derived from it."""
+    """Load the edit decision list, make its cuts safe, persist what survives.
+
+    Sanitising happens here rather than in the montage stage so that re-running a render
+    picks up a fix without paying for another model call.
+    """
+    import json
+
     plan = timeline.load(ep.edl)
+    silences = json.loads(ep.silences.read_text()) if ep.silences.is_file() else []
+    plan, notes = cuts.sanitize(plan, silences)
+    for note in notes:
+        log(f"  cut check: {note}")
+    stats = cuts.report(plan, silences)
+    log(
+        f"cuts: {stats['cuts']} kept after checks, {stats['seconds_cut']:.0f}s removed "
+        f"({stats['share']:.0%} of the take)"
+    )
+    if stats["share"] > 0.25:
+        log("  ⚠ more than a quarter of the take was cut — worth watching before publishing")
     timeline.write_kept(ep.kept, plan.kept)
     return plan
 

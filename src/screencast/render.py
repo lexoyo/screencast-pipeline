@@ -11,18 +11,9 @@ import json
 
 from .episode import Episode
 from .layout import escape_filter_path, wrap
-from .shell import ffmpeg, ffprobe_duration, log
+from .shell import ffmpeg, log
+from .sync import camera_offset
 from .timeline import Edl, KeptSegment, ListItem
-
-
-def sync_offset(ep: Episode) -> float:
-    """How far behind the screen recording the webcam file starts.
-
-    OBS's Source Record filter takes a moment to spin up, so face.mkv begins slightly
-    after screen.mkv. Both stop together, so the difference in duration is the lag —
-    mapping screen time T to camera time T - offset.
-    """
-    return max(0.0, ffprobe_duration(ep.screen) - ffprobe_duration(ep.face))
 
 
 def list_card_filter(item: ListItem, ep: Episode, index: int) -> str:
@@ -102,8 +93,7 @@ def run(ep: Episode, plan: Edl) -> None:
 
     params = json.loads(ep.params.read_text())
     ep.segdir.mkdir(parents=True, exist_ok=True)
-    offset = sync_offset(ep)
-    log(f"face/screen sync offset = {offset:.3f}s")
+    offset = camera_offset(ep)
 
     parts: list[str] = []
     for index, seg in enumerate(kept):

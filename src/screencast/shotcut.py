@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from .episode import Episode
 from .shell import ffprobe_duration, log
+from .sync import camera_offset
 from .timecode import mlt_timecode as tc
 from .timeline import Edl
 
@@ -35,7 +36,7 @@ def build(ep: Episode, plan: Edl) -> str:
     face = ep.face.resolve()
     screen_dur = ffprobe_duration(screen)
     face_dur = ffprobe_duration(face)
-    offset = max(0.0, screen_dur - face_dur)
+    offset = camera_offset(ep)
     total = sum(seg.duration for seg in kept)
 
     full_frame = f"0 0 {cfg.out_w} {cfg.out_h} 1"
