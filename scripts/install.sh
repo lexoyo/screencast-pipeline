@@ -24,7 +24,7 @@ CHECK_ONLY=0
 
 WHISPER_DIR="${WHISPER_DIR:-/opt/whisper.cpp}"
 MODEL_DIR="${MODEL_DIR:-$HOME/models/whisper}"
-MODELS="${MODELS:-small base}"
+MODELS="${MODELS:-large-v3-turbo small}"   # turbo = celui du pipeline, small = secours CPU
 
 ok(){ printf '  \033[32m✓\033[0m %-22s %s\n' "$1" "${2:-}"; }
 missing(){ printf '  \033[31m✗\033[0m %-22s %s\n' "$1" "${2:-}"; }
@@ -68,10 +68,22 @@ else
 fi
 
 title "Transcription"
-if [ -x "$WHISPER_DIR/build/bin/whisper-cli" ]; then
-  ok "whisper.cpp" "$WHISPER_DIR/build/bin/whisper-cli"
+HAS_NVIDIA=0; command -v nvidia-smi >/dev/null 2>&1 && HAS_NVIDIA=1
+if [ -x "$WHISPER_DIR/build-cuda/bin/whisper-cli" ]; then
+  ok "whisper.cpp (CUDA)" "$WHISPER_DIR/build-cuda/bin/whisper-cli"
+elif [ -x "$WHISPER_DIR/build/bin/whisper-cli" ] && [ $HAS_NVIDIA -eq 0 ]; then
+  ok "whisper.cpp (CPU)" "$WHISPER_DIR/build/bin/whisper-cli"
+elif [ -x "$WHISPER_DIR/build/bin/whisper-cli" ]; then
+  missing "whisper.cpp (CUDA)" "→ CPU build present, GPU build absent — 11x slower than it could be"
 else
   missing "whisper.cpp" "→ built from source into $WHISPER_DIR"
+fi
+if [ $HAS_NVIDIA -eq 1 ]; then
+  if [ -x /usr/local/cuda/bin/nvcc ] || command -v nvcc >/dev/null 2>&1; then
+    ok "nvcc" "$( { command -v nvcc || echo /usr/local/cuda/bin/nvcc; } )"
+  else
+    missing "CUDA toolkit" "→ nvcc + cudart + cuBLAS, needed to build whisper for the GPU"
+  fi
 fi
 for model in $MODELS; do
   if [ -f "$MODEL_DIR/ggml-$model.bin" ]; then ok "model $model" "$MODEL_DIR/ggml-$model.bin"
@@ -124,9 +136,60 @@ fi
 if [ $NEEDS_WHISPER -eq 1 ]; then
   echo "building whisper.cpp"
   sudo dnf install -y git cmake gcc-c++
-  sudo git clone --depth 1 https://github.com/ggml-org/whisper.cpp "$WHISPER_DIR"
-  sudo cmake -B "$WHISPER_DIR/build" -S "$WHISPER_DIR" -DCMAKE_BUILD_TYPE=Release
-  sudo cmake --build "$WHISPER_DIR/build" -j --config Release
+  if [ ! -d "$WHISPER_DIR/.git" ]; then
+    sudo git clone --depth 1 https://github.com/ggml-org/whisper.cpp "$WHISPER_DIR"
+    # Owned by the user afterwards: a rebuild should not need sudo, and the models are read
+    # from $HOME anyway.
+    sudo chown -R "$USER:$USER" "$WHISPER_DIR"
+  fi
+
+  if [ $HAS_NVIDIA -eq 1 ]; then
+    # ---- CUDA -------------------------------------------------------------------------
+    # Worth the trouble: 16 min of audio takes 5 min 41 s on this CPU and 46 s on the GPU.
+    if ! command -v nvcc >/dev/null 2>&1 && [ ! -x /usr/local/cuda/bin/nvcc ]; then
+      fedora=$(rpm -E %fedora)
+      base="https://developer.download.nvidia.com/compute/cuda/repos/fedora${fedora}/x86_64"
+      echo "adding NVIDIA's CUDA repository for Fedora ${fedora}"
+      # ⚠️ THE line. Without excludepkgs, dnf happily replaces the RPM Fusion driver this
+      # machine boots on with NVIDIA's own, and the next reboot comes up on a black screen.
+      # Only the compiler and the two libraries ggml links against are wanted from here.
+      sudo tee /etc/yum.repos.d/cuda-fedora${fedora}.repo >/dev/null <<EOF
+[cuda-fedora${fedora}-x86_64]
+name=CUDA Fedora ${fedora} x86_64
+baseurl=${base}
+enabled=1
+gpgcheck=1
+gpgkey=${base}/73CD9B30.pub
+excludepkgs=nvidia-driver*,nvidia-kmod*,kmod-nvidia*,akmod-nvidia*,xorg-x11-drv-nvidia*,nvidia-open*,nvidia-settings*,nvidia-modprobe*,nvidia-persistenced*,nvidia-xconfig*,nvidia-libXNVCtrl*,dkms-nvidia*,cuda-drivers*,nvidia-fs*
+EOF
+      # Version-suffixed names (cuda-nvcc-13-3) pin a release; the bare ones follow latest.
+      sudo dnf install -y cuda-nvcc cuda-cudart-devel libcublas-devel
+    fi
+    NVCC=$(command -v nvcc || echo /usr/local/cuda/bin/nvcc)
+
+    # nvcc refuses a host compiler newer than it knows. Fedora ships gcc 16 while CUDA 13
+    # stops at 15, so the compat package is installed and pointed at explicitly.
+    HOST_CXX=""
+    if [ "$(gcc -dumpversion)" -gt 15 ] 2>/dev/null; then
+      sudo dnf install -y gcc15 gcc15-c++
+      HOST_CXX="-DCMAKE_CUDA_HOST_COMPILER=/usr/bin/g++-15"
+    fi
+
+    # The card's own compute capability rather than a hardcoded 86: on another machine that
+    # would either fail to build or compile every architecture ever made.
+    ARCH=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -1 | tr -d '.')
+    echo "building whisper.cpp with CUDA for compute capability ${ARCH}"
+    cmake -B "$WHISPER_DIR/build-cuda" -S "$WHISPER_DIR" \
+      -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=ON \
+      -DCMAKE_CUDA_ARCHITECTURES="$ARCH" -DCMAKE_CUDA_COMPILER="$NVCC" $HOST_CXX
+    cmake --build "$WHISPER_DIR/build-cuda" -j "$(nproc)"
+  else
+    echo "no NVIDIA GPU detected — building the CPU version"
+    cmake -B "$WHISPER_DIR/build" -S "$WHISPER_DIR" -DCMAKE_BUILD_TYPE=Release
+    cmake --build "$WHISPER_DIR/build" -j "$(nproc)"
+    echo "  → set WHISPER_BIN to $WHISPER_DIR/build/bin/whisper-cli and WHISPER_MODEL to"
+    echo "    ggml-small.bin in config.env: large-v3-turbo on a CPU takes ~17 min for 16 min of audio."
+  fi
 fi
 
 if [ $NEEDS_MODELS -eq 1 ]; then

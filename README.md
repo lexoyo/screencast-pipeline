@@ -15,6 +15,47 @@ cp config.env.example config.env    # first time only
 
 ---
 
+## On a fresh machine
+
+Fedora, from nothing to a working setup:
+
+```bash
+git clone git@github.com:lexoyo/screencast-pipeline.git ~/_/screencast-pipeline
+cd ~/_/screencast-pipeline
+./scripts/install.sh --check        # says what is missing, changes nothing
+./scripts/install.sh                # installs it, after confirmation
+cp config.env.example config.env
+./scripts/setup-obs.sh              # the two-output OBS scene
+./screencast doctor
+```
+
+`install.sh` handles ffmpeg (with the H.264 fix), OBS, Shotcut, Chromium, and builds
+whisper.cpp — **with CUDA when an NVIDIA card is present**, which is worth doing: 16
+minutes of audio take 5 min 41 s on this CPU and 46 s on the GPU. It reads the card's own
+compute capability rather than assuming one, and installs the gcc compat package when the
+system compiler is newer than nvcc accepts.
+
+**Two things it deliberately does not install**, because neither is ours to package:
+
+| | |
+|---|---|
+| `claude` | the model that decides the edit — install and authenticate it yourself |
+| `sonorita-cli` | the music under the cards — separate RPM. Without it, the video is simply made without music, and says so |
+
+**Chromium is never touched**: it ships with Fedora, it renders the slides, and pulling a
+second copy would add Node and 150 MB for a job `chromium-browser --headless` does in
+under a second.
+
+Everything else that matters is in this repository and comes back with the clone: the
+prompts (`src/screencast/prompts/`), the music prompts, the slide templates and channel
+theme, the glossary of words whisper gets wrong, and `config.env.example` — which is kept
+key-for-key in step with a working `config.env`, so copying it is enough.
+
+What does **not** come back, by design: the rushes, the models (re-downloaded by
+`install.sh`, ~2 GB), and any browser session used to publish.
+
+---
+
 ## What it does
 
 You record **two frame-synced files** in one OBS take:
