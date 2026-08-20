@@ -277,7 +277,7 @@ def build(
         overlays.append(
             Overlay(
                 kind="tool",
-                values={"name": tool.name, "what": tool.what, "url": tool.url},
+                values={"name": tool.name, "what": tool.what, "url": _short_url(tool.url)},
                 start=start,
                 end=min(start + TOOL_SECONDS, shift(body_duration)),
             )
@@ -326,6 +326,15 @@ def _point_label(item, chapters: list[str]) -> str:
         if 0 <= index < len(chapters):
             return chapters[index]
     return item.label
+
+
+def _short_url(url: str) -> str:
+    """`https://fedoraproject.org/` -> `fedoraproject.org`.
+
+    Nobody types the scheme, and on a band that must hold one line it costs eight
+    characters of the description for no information at all.
+    """
+    return url.removeprefix("https://").removeprefix("http://").removeprefix("www.").rstrip("/")
 
 
 def _two_digits(value: str) -> str:

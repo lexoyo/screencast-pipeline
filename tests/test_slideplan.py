@@ -289,7 +289,7 @@ def test_a_tool_panel_carries_the_name_what_it_is_and_the_url():
                                  "url": "https://jan.ai"}])
     layout = build(plan, plan.kept, channel=CHANNEL, intro_seconds=6.0)
     tool = next(o for o in layout.overlays if o.kind == "tool")
-    assert tool.values == {"name": "Jan", "what": "un LLM en local", "url": "https://jan.ai"}
+    assert tool.values == {"name": "Jan", "what": "un LLM en local", "url": "jan.ai"}
     assert tool.start == 130.0 + 6.0
 
 
@@ -313,3 +313,11 @@ def test_a_chapter_wins_over_a_tool_panel_at_the_same_moment():
     at_100 = [o for o in layout.overlays if abs(o.start - 106.0) < 0.01]
     assert len(at_100) == 1
     assert at_100[0].kind == "chapter"
+
+
+def test_the_band_drops_the_scheme_from_the_url():
+    # nobody types https://, and the band has one line to hold everything
+    plan = _summary_plan(tools=[{"at": 130, "name": "Fedora", "url": "https://fedoraproject.org/"}])
+    layout = build(plan, plan.kept, channel=CHANNEL, intro_seconds=6.0)
+    tool = next(o for o in layout.overlays if o.kind == "tool")
+    assert tool.values["url"] == "fedoraproject.org"
