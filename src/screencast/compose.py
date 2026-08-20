@@ -17,7 +17,7 @@ from pathlib import Path
 
 from . import music, slides
 from .episode import Episode
-from .shell import ffmpeg, ffprobe_duration, log
+from .shell import ffmpeg, ffprobe_duration, log, loudness_lufs
 from .slideplan import Card, Overlay, SlidePlan
 
 # What a list card does to the picture behind it. The blur is what makes the text readable
@@ -188,7 +188,12 @@ def apply_music(ep: Episode, source: Path, layout: SlidePlan, plan_meta, out: Pa
         return out
 
     bed_duration = ffprobe_duration(tracks["bed"]) if "bed" in tracks else 0.0
-    beds = music.plan_beds(layout, tracks, bed_duration)
+    beds = music.with_gains(
+        music.plan_beds(layout, tracks, bed_duration),
+        tracks,
+        ep.cfg.audio_lufs,
+        loudness_lufs,
+    )
     if not beds:
         if source != out:
             out.write_bytes(source.read_bytes())

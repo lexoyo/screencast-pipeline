@@ -2,16 +2,19 @@
 
 from pathlib import Path
 
+import pytest
+
 from screencast.music import (
+    BED_LUFS_OFFSET,
     FADE_OUT,
     LEAD_IN,
     TAIL,
-    VOLUME_BED,
-    VOLUME_CARD,
     Bed,
     mix_filter,
     plan_beds,
     seed_for,
+    target_for,
+    with_gains,
     write_prompts,
 )
 from screencast.slideplan import Card, Overlay, SlidePlan
@@ -43,23 +46,13 @@ def test_music_never_starts_before_the_video():
     assert plan_beds(layout, TRACKS, bed_duration=60)[0].start == 0.0
 
 
-def test_cards_are_louder_than_beds():
-    # nobody speaks over a card; the bed sits under the voice
-    layout = _layout(cards=[Card("intro", {}, 0.0, 4.0)],
-                     overlays=[Overlay("chapter", {}, 100.0, 103.0)])
-    beds = plan_beds(layout, TRACKS, bed_duration=60)
-    card_bed = next(b for b in beds if b.track == TRACKS["intro"])
-    overlay_bed = next(b for b in beds if b.track == TRACKS["bed"])
-    assert card_bed.volume == VOLUME_CARD
-    assert overlay_bed.volume == VOLUME_BED
-    assert VOLUME_BED < VOLUME_CARD
-
-
 def test_overlays_close_together_share_one_continuous_bed():
-    layout = _layout(overlays=[
-        Overlay("chapter", {}, 10.0, 13.0),
-        Overlay("list", {}, 14.0, 17.5),
-    ])
+    layout = _layout(
+        overlays=[
+            Overlay("chapter", {}, 10.0, 13.0),
+            Overlay("list", {}, 14.0, 17.5),
+        ]
+    )
     beds = plan_beds(layout, TRACKS, bed_duration=60)
     assert len(beds) == 1
     assert beds[0].end == 17.5 + TAIL
@@ -102,18 +95,18 @@ def test_the_seed_is_stable_per_episode_and_per_vibe():
 
 
 def test_the_mix_keeps_the_speech_track():
-    graph = mix_filter([Bed(10.0, 15.0, Path("/m/bed.mp3"), 0.0, VOLUME_BED)])
+    graph = mix_filter([Bed(10.0, 15.0, Path("/m/bed.mp3"), 0.0, 0.0)])
     assert "[0:a]" in graph
     assert "normalize=0" in graph, "normalising would duck the voice under the music"
 
 
 def test_each_bed_is_delayed_to_its_position():
-    graph = mix_filter([Bed(12.5, 18.0, Path("/m/bed.mp3"), 0.0, VOLUME_BED)])
+    graph = mix_filter([Bed(12.5, 18.0, Path("/m/bed.mp3"), 0.0, 0.0)])
     assert "adelay=12500|12500" in graph
 
 
 def test_the_fade_out_lands_inside_the_bed():
-    bed = Bed(10.0, 12.0, Path("/m/bed.mp3"), 0.0, VOLUME_BED)
+    bed = Bed(10.0, 12.0, Path("/m/bed.mp3"), 0.0, 0.0)
     graph = mix_filter([bed])
     assert f"afade=t=out:st={max(0.0, bed.duration - FADE_OUT)}" in graph
 
@@ -137,3 +130,55 @@ def test_the_bed_prompt_is_copied_untouched(tmp_path):
     bed = next(written.glob("*bed*.md")).read_text()
     assert "[instrumental]" in bed
     assert "x" not in bed.split("---")[-1]
+
+
+def test_cards_are_louder_than_beds():
+    # nobody speaks over a card; the bed sits well under the voice
+    layout = _layout(
+        cards=[Card("intro", {}, 0.0, 4.0)], overlays=[Overlay("chapter", {}, 100.0, 103.0)]
+    )
+    beds = with_gains(plan_beds(layout, TRACKS, 60), TRACKS, -16.0, lambda *_: -14.0)
+    card = next(b for b in beds if b.track == TRACKS["intro"])
+    bed = next(b for b in beds if b.track == TRACKS["bed"])
+    assert bed.gain_db == pytest.approx(card.gain_db + BED_LUFS_OFFSET)
+
+
+def test_a_quiet_stretch_is_pushed_up_and_a_loud_one_down():
+    # the point of targeting a level: a fixed multiplier put the first real intro at
+    # -27.7 LUFS against a body at -16
+    layout = _layout(cards=[Card("intro", {}, 0.0, 4.0)])
+    quiet = with_gains(plan_beds(layout, TRACKS, 60), TRACKS, -16.0, lambda *_: -28.0)
+    assert quiet[0].gain_db == pytest.approx(12.0)
+    loud = with_gains(plan_beds(layout, TRACKS, 60), TRACKS, -16.0, lambda *_: -10.0)
+    assert loud[0].gain_db == pytest.approx(-6.0)
+
+
+def test_the_gain_is_measured_on_the_stretch_played_not_the_whole_file():
+    # a track's average says little about the six seconds used under a card: measuring the
+    # file put the first real intro at -23 LUFS against a target of -16
+    layout = _layout(cards=[Card("intro", {}, 0.0, 4.0)])
+    seen = []
+
+    def measure(track, start, duration):
+        seen.append((start, duration))
+        return -20.0
+
+    with_gains(plan_beds(layout, TRACKS, 60), TRACKS, -16.0, measure)
+    assert seen == [(0.0, 4.0 + TAIL)]
+
+
+def test_a_stretch_that_could_not_be_measured_gets_no_gain():
+    layout = _layout(cards=[Card("intro", {}, 0.0, 4.0)])
+    beds = with_gains(plan_beds(layout, TRACKS, 60), TRACKS, -16.0, lambda *_: None)
+    assert beds[0].gain_db == 0.0
+
+
+def test_the_target_depends_on_which_track_it_is():
+    layout = _layout(
+        cards=[Card("intro", {}, 0.0, 4.0)], overlays=[Overlay("chapter", {}, 100.0, 103.0)]
+    )
+    beds = plan_beds(layout, TRACKS, 60)
+    card = next(b for b in beds if b.track == TRACKS["intro"])
+    bed = next(b for b in beds if b.track == TRACKS["bed"])
+    assert target_for(card, TRACKS, -16.0) == -16.0
+    assert target_for(bed, TRACKS, -16.0) == -34.0

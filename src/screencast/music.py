@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import hashlib
 import shutil
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from string import Template
 
@@ -50,20 +50,25 @@ TAIL = 1.4
 FADE_IN = 0.5
 FADE_OUT = 1.2
 
-# Card music plays alone and can be heard; bed music sits under speech and must not compete.
-VOLUME_CARD = 0.45
-VOLUME_BED = 0.15
+# Levels are TARGETS, not gains. A generated track's own loudness varies from one run to
+# the next, so a fixed multiplier gives a different result every time: 0.45 on the first
+# real track landed the intro at -27.7 LUFS against a body at -16, i.e. inaudible.
+#
+# A card plays alone and should sit where the voice sits. A bed plays under speech and is
+# placed well below it — 18 dB down is present without ever competing.
+CARD_LUFS_OFFSET = 0.0
+BED_LUFS_OFFSET = -18.0
 
 
 @dataclass(frozen=True)
 class Bed:
-    """One stretch of music: where it plays, and what it reads from which track."""
+    """One stretch of music: where it plays, what it reads, and at what gain."""
 
     start: float
     end: float
     track: Path
     source_offset: float
-    volume: float
+    gain_db: float
 
     @property
     def duration(self) -> float:
@@ -143,12 +148,36 @@ def _merge(spans: list[tuple[float, float]]) -> list[tuple[float, float]]:
     return [(a, b) for a, b in merged]
 
 
-def plan_beds(layout: SlidePlan, tracks: dict[str, Path], bed_duration: float) -> list[Bed]:
+def target_for(bed: Bed, tracks: dict[str, Path], speech_lufs: float) -> float:
+    """Where this bed should land, in LUFS."""
+    is_bed = bed.track == tracks.get("bed")
+    return speech_lufs + (BED_LUFS_OFFSET if is_bed else CARD_LUFS_OFFSET)
+
+
+def with_gains(beds: list[Bed], tracks: dict[str, Path], speech_lufs: float, measure
+               ) -> list[Bed]:
+    """Set each bed's gain from the loudness of the stretch it actually plays.
+
+    Per stretch, not per file: a track's average says little about the six seconds used
+    under a card. Measuring the whole file put the first real intro at -23 LUFS against a
+    target of -16.
+    """
+    out: list[Bed] = []
+    for bed in beds:
+        measured = measure(bed.track, bed.source_offset, bed.duration)
+        gain = 0.0 if measured is None else target_for(bed, tracks, speech_lufs) - measured
+        out.append(replace(bed, gain_db=gain))
+    return out
+
+
+def plan_beds(layout: SlidePlan, tracks: dict[str, Path], bed_duration: float,
+              gains: dict[str, float] | None = None) -> list[Bed]:
     """Where music plays, at what level, reading from which track.
 
     Cards get their own track and read it from the start; overlays share the bed and walk
     through it, so a video with ten overlays does not replay the same four bars ten times.
     """
+    gains = gains or {}
     beds: list[Bed] = []
 
     for card in layout.cards:
@@ -158,7 +187,7 @@ def plan_beds(layout: SlidePlan, tracks: dict[str, Path], bed_duration: float) -
         start = max(0.0, card.start - LEAD_IN)
         beds.append(
             Bed(start=start, end=card.end + TAIL, track=track,
-                source_offset=0.0, volume=VOLUME_CARD)
+                source_offset=0.0, gain_db=gains.get(card.kind, 0.0))
         )
 
     bed_track = tracks.get("bed")
@@ -170,7 +199,7 @@ def plan_beds(layout: SlidePlan, tracks: dict[str, Path], bed_duration: float) -
                 cursor = 0.0
             beds.append(
                 Bed(start=start, end=end, track=bed_track,
-                    source_offset=cursor, volume=VOLUME_BED)
+                    source_offset=cursor, gain_db=gains.get("bed", 0.0))
             )
             cursor += length
 
@@ -196,7 +225,7 @@ def mix_filter(beds: list[Bed], first_input: int = 1) -> str:
             f"atrim={bed.source_offset}:{bed.source_offset + bed.duration},"
             f"asetpts=PTS-STARTPTS,"
             f"afade=t=in:st=0:d={FADE_IN},afade=t=out:st={fade_out_at}:d={FADE_OUT},"
-            f"volume={bed.volume},"
+            f"volume={bed.gain_db:.1f}dB,"
             f"adelay={int(bed.start * 1000)}|{int(bed.start * 1000)}[{label}]"
         )
         labels.append(f"[{label}]")

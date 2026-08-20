@@ -92,3 +92,29 @@ def ffmpeg(args: list[str | Path], *, allow_fail: bool = False, quiet: bool = Tr
     base: list[str | Path] = ["ffmpeg", "-y", "-hide_banner"]
     base += ["-loglevel", "error"] if quiet else ["-nostats"]
     return run(base + args, capture=not quiet, allow_fail=allow_fail)
+
+
+def loudness_lufs(path: Path, start: float = 0.0, duration: float | None = None) -> float | None:
+    """Integrated loudness of a file, or of one stretch of it.
+
+    The stretch matters: a track's average says little about the six seconds actually used
+    under a card, because a piece of music starts quietly. Measuring the whole file put the
+    first real intro 7 dB below its target.
+
+    LUFS rather than RMS: it is what "as loud as the voice" means to an ear, and the unit
+    the audio target in config.env is already expressed in.
+    """
+    args: list[str | Path] = ["ffmpeg", "-hide_banner", "-nostats"]
+    if start:
+        args += ["-ss", str(start)]
+    if duration:
+        args += ["-t", str(duration)]
+    args += ["-i", path, "-af", "ebur128=framelog=quiet", "-f", "null", "-"]
+    proc = run(args, capture=True, allow_fail=True)
+    for line in reversed((proc.stderr or "").splitlines()):
+        if "I:" in line and "LUFS" in line:
+            try:
+                return float(line.split("I:")[1].split("LUFS")[0].strip())
+            except (IndexError, ValueError):
+                return None
+    return None
