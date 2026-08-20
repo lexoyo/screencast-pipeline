@@ -80,6 +80,13 @@ class Metadata:
 
     intro: Bookend | None = None
     outro: Bookend | None = None
+    jingle: dict[str, str] = field(default_factory=dict)
+    """The lines SUNG over the intro and outro cards, keyed "intro" / "outro".
+
+    Separate from what is displayed, because they answer to different constraints: the
+    card is read, the jingle is heard and has to scan. Above all it must be specific to
+    THIS video — the same sung line on every episode stops being a signature and becomes a
+    corporate jingle."""
 
 
 @dataclass(frozen=True)
@@ -191,6 +198,11 @@ def parse(data: dict[str, Any]) -> Edl:
         programme=[str(x).strip() for x in meta_raw.get("programme") or [] if str(x).strip()],
         intro=Bookend.parse(meta_raw.get("intro")),
         outro=Bookend.parse(meta_raw.get("outro")),
+        jingle={
+            key: str(value).strip()
+            for key, value in (meta_raw.get("jingle") or {}).items()
+            if str(value).strip()
+        },
     )
     timeline = [
         Span(

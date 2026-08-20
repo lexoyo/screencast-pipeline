@@ -38,7 +38,8 @@ Output schema (exact keys):
     "chapters": [ { "at": sec, "label": "..." } ], // `at` in ORIGINAL seconds; remapped later
     "programme": ["...", "..."],               // the points ANNOUNCED OUT LOUD. omit if none.
     "intro": { "title": "...", "subtitle": "..." },  // opening card. omit if not worth one.
-    "outro": { "title": "...", "cta": "..." }        // closing card. omit if not worth one.
+    "outro": { "title": "...", "cta": "..." },       // closing card. omit if not worth one.
+    "jingle": { "intro": "...", "outro": "..." }     // the lines SUNG over those cards
   },
   "timeline": [
     {
@@ -106,6 +107,13 @@ Output schema (exact keys):
   en local, simplement" does. `intro.subtitle` adds the angle in a handful of words. `outro.cta` asks for ONE thing — a viewer who reached
   the end acts on a single clear ask and on nothing at all if given a list. Omit either card
   when the take does not warrant it rather than filling it with something empty.
+
+- **`jingle`** is what gets SUNG over those two cards, and it is not the text shown on them.
+  One or two short lines each, in the spoken language, that scan when sung — think of a
+  chorus, not a caption. They must be **specific to this video**: "Merci d'avoir regardé"
+  sung identically on every episode stops being a signature and becomes a corporate jingle.
+  Name the subject, say what was just shown, land the promise. Omit a side if its card is
+  omitted.
 
 - **Chapters**: 3-8, at real topic shifts, `at` = original second where the topic starts.
 - **metadata language** = the spoken language. Title sells the value, not "screencast of X".

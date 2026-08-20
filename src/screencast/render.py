@@ -131,4 +131,13 @@ def run(ep: Episode, plan: Edl, layout: SlidePlan | None = None) -> None:
     )
     if layout and layout.overlays:
         compose.apply_overlays(ep, assembled, layout, ep.draft)
+
+    # Music last, on the finished picture: it is copied through, so a music failure never
+    # costs a re-encode of the video.
+    if layout and (layout.cards or layout.overlays):
+        with_music = ep.work / "with_music.mp4"
+        compose.apply_music(ep, ep.draft, layout, plan.metadata, with_music)
+        if with_music.is_file():
+            ep.draft.unlink(missing_ok=True)
+            with_music.rename(ep.draft)
     log(f"draft -> {ep.draft}")

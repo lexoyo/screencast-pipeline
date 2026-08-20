@@ -15,9 +15,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from . import slides
+from . import music, slides
 from .episode import Episode
-from .shell import ffmpeg, log
+from .shell import ffmpeg, ffprobe_duration, log
 from .slideplan import Card, Overlay, SlidePlan
 
 # What a list card does to the picture behind it. The blur is what makes the text readable
@@ -156,6 +156,55 @@ def apply_overlays(ep: Episode, source: Path, layout: SlidePlan, out: Path) -> P
             "-c:v", "libx264", "-preset", "veryfast", "-crf", str(ep.cfg.draft_crf),
             "-pix_fmt", "yuv420p", "-c:a", "copy",
             "-shortest",  # the looped PNGs are endless; the video decides the length
+            out,
+        ]
+    )
+    return out
+
+
+def apply_music(ep: Episode, source: Path, layout: SlidePlan, plan_meta, out: Path) -> Path:
+    """Mix the generated tracks under the video.
+
+    Failure here is not fatal: a video with no music is a video, a pipeline that stops on
+    the last step is a wasted render. The absence is logged rather than raised.
+    """
+    from .shell import ToolError
+
+    try:
+        # The sung lines come from `jingle`; the card titles are the fallback for an EDL
+        # produced before that field existed.
+        tracks = music.build_tracks(
+            ep,
+            layout,
+            intro_lyrics=plan_meta.jingle.get("intro")
+            or (plan_meta.intro.title if plan_meta.intro else ""),
+            outro_lyrics=plan_meta.jingle.get("outro")
+            or (plan_meta.outro.title if plan_meta.outro else ""),
+        )
+    except ToolError as exc:
+        log(f"⚠ music skipped: {exc}")
+        if source != out:
+            out.write_bytes(source.read_bytes())
+        return out
+
+    bed_duration = ffprobe_duration(tracks["bed"]) if "bed" in tracks else 0.0
+    beds = music.plan_beds(layout, tracks, bed_duration)
+    if not beds:
+        if source != out:
+            out.write_bytes(source.read_bytes())
+        return out
+
+    inputs: list[str | Path] = ["-i", source]
+    for bed in beds:
+        inputs += ["-i", bed.track]
+
+    log(f"music: mixing {len(beds)} beds")
+    ffmpeg(
+        inputs
+        + [
+            "-filter_complex", music.mix_filter(beds),
+            "-map", "0:v", "-map", "[aout]",
+            "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
             out,
         ]
     )

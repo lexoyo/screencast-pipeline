@@ -7,6 +7,7 @@ shot once, the close-up once, for the whole project.
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 from .episode import Episode
@@ -63,6 +64,47 @@ def _slide_track(entries: list[tuple[int, float, float]]) -> list[str]:
         rows.append(f'    <entry producer="slide{index}" in="{tc(0)}" out="{tc(end - start)}"/>')
         cursor = end
     return rows
+
+
+def _music_producers(tracks: list[Path]) -> str:
+    """One producer per music file, audio only."""
+    return "\n".join(
+        f'  <producer id="music{index}" out="{tc(3600)}">'
+        f'<property name="length">{tc(3600)}</property>'
+        f'<property name="resource">{track}</property>'
+        f'<property name="mlt_service">avformat-novalidate</property>'
+        f'<property name="video_index">-1</property></producer>'
+        for index, track in enumerate(tracks)
+    )
+
+
+def _music_track(beds, tracks: list[Path]) -> list[str]:
+    """Music on its own playlist, so it can be levelled or muted without touching the voice.
+
+    Each entry reads its own slice of its own track: `in`/`out` are positions INSIDE the
+    music file, the blanks before them place it on the timeline.
+    """
+    rows: list[str] = []
+    cursor = 0.0
+    for bed in sorted(beds, key=lambda b: b.start):
+        if bed.start > cursor:
+            rows.append(_blank(bed.start - cursor))
+        index = tracks.index(bed.track)
+        rows.append(
+            f'    <entry producer="music{index}" '
+            f'in="{tc(bed.source_offset)}" out="{tc(bed.source_offset + bed.duration)}"/>'
+        )
+        cursor = bed.end
+    return rows
+
+
+def _volume_filter(level: float) -> str:
+    """MLT wants decibels where the mix uses a linear gain."""
+    db = 20 * math.log10(level) if level > 0 else -60
+    return (
+        '<filter><property name="mlt_service">volume</property>'
+        f'<property name="level">{db:.1f}</property></filter>'
+    )
 
 
 def build(ep: Episode, plan: Edl, layout: SlidePlan | None = None) -> str:
@@ -124,6 +166,29 @@ def build(ep: Episode, plan: Edl, layout: SlidePlan | None = None) -> str:
             slide_entries.append((len(slide_images), overlay.start, overlay.end))
             slide_images.append(image)
 
+    # --- music: its own playlist, so it can be levelled or muted without touching the voice
+    music_tracks: list[Path] = []
+    music_beds = []
+    if layout and (layout.cards or layout.overlays):
+        from . import music as music_mod
+
+        found = sorted((ep.work / "music").glob("*/*.mp3"))
+        by_kind = {path.parent.name: path for path in found}
+        if by_kind:
+            bed_dur = ffprobe_duration(by_kind["bed"]) if "bed" in by_kind else 0.0
+            music_beds = music_mod.plan_beds(layout, by_kind, bed_dur)
+            music_tracks = sorted({bed.track for bed in music_beds})
+
+    track_music = _music_track(music_beds, music_tracks) if music_beds else []
+    music_producers = _music_producers(music_tracks) if music_tracks else ""
+    music_playlist = (
+        f'  <playlist id="track_music">\n{chr(10).join(track_music)}\n'
+        f"    {_volume_filter(music_beds[0].volume)}\n  </playlist>"
+        if track_music
+        else ""
+    )
+    music_track_ref = '    <track producer="track_music" hide="video"/>' if track_music else ""
+
     track_slides = _slide_track(slide_entries)
     slide_producers = _slide_producers(slide_images)
     slides_playlist = (
@@ -162,10 +227,12 @@ def build(ep: Episode, plan: Edl, layout: SlidePlan | None = None) -> str:
     {_size_position(zoom_rect)}
   </playlist>
 {slide_producers}
+{music_producers}
   <playlist id="track_audio">
 {nl.join(track_audio)}
   </playlist>
 {slides_playlist}
+{music_playlist}
   <tractor id="main">
     <track producer="black"/>
     <track producer="track_ecran"/>
@@ -173,11 +240,13 @@ def build(ep: Episode, plan: Edl, layout: SlidePlan | None = None) -> str:
     <track producer="track_serre"/>
 {slides_track_ref}
     <track producer="track_audio" hide="video"/>
+{music_track_ref}
     <transition mlt_service="frei0r.cairoblend"><property name="a_track">0</property><property name="b_track">1</property></transition>
     <transition mlt_service="frei0r.cairoblend"><property name="a_track">0</property><property name="b_track">2</property></transition>
     <transition mlt_service="frei0r.cairoblend"><property name="a_track">0</property><property name="b_track">3</property></transition>
 {slides_transition}
     <transition mlt_service="mix"><property name="a_track">0</property><property name="b_track">{5 if track_slides else 4}</property><property name="always_active">1</property><property name="sum">1</property></transition>
+{f'    <transition mlt_service="mix"><property name="a_track">0</property><property name="b_track">{(6 if track_slides else 5)}</property><property name="always_active">1</property><property name="sum">1</property></transition>' if track_music else ""}
   </tractor>
 </mlt>
 """
@@ -187,5 +256,5 @@ def run(ep: Episode, plan: Edl, layout: SlidePlan | None = None) -> None:
     log("emit Shotcut project")
     ep.project.write_text(build(ep, plan, layout))
     log(f"project -> {ep.project}")
-    log("  3 video tracks: ecran / large / serre (+ mic). Reframe once per track head")
+    log("  3 video tracks: ecran / large / serre, plus slides, mic and music on their own")
     log("  with the 'Size Position Rotate' filter — serre already carries the zoom.")
