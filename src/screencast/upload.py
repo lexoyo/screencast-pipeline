@@ -49,10 +49,19 @@ def build(deliverable: Path, title: str, chapters: list[tuple[str, str]], langua
     for extra in others:
         code = extra.split(".")[-2]
         lines.append(f"- ajouter la langue **{code}** et téléverser `{extra}`")
+    if (deliverable / "metadata.en.txt").is_file():
+        lines += [
+            "",
+            "Dans la même page, chaque langue ajoutée a **son titre et sa description** :",
+            "les coller depuis `metadata.en.txt`. C'est ce que lit un spectateur qui arrive",
+            "d'une recherche en anglais — pas les sous-titres.",
+        ]
     lines += [
         "",
         "## 3. Vérifier avant de publier",
         "",
+        "- lire `QC.md` : il liste ce que la relecture a trouvé, et ce qui bloquerait",
+        "  l'envoi (titre trop long, chapitres que YouTube ignorerait)",
         "- les chapitres apparaissent sous la barre de lecture (sinon : le premier n'est",
         "  pas à 0:00, ou il y en a moins de trois)",
         "- les liens de la description sont cliquables et mènent où il faut",
@@ -73,6 +82,8 @@ def build(deliverable: Path, title: str, chapters: list[tuple[str, str]], langua
         "final.mp4": "la vidéo à publier",
         "project.mlt": "le projet Shotcut, si tu veux remonter (garde les rushes à côté)",
         "metadata.txt": "titre, description, liens, tags, chapitres",
+        "metadata.en.txt": "les mêmes, en anglais — pour la traduction YouTube",
+        "QC.md": "ce que la relecture a trouvé, à lire avant de publier",
     }
     for name in files:
         if name.endswith(".srt"):

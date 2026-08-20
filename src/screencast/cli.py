@@ -21,6 +21,7 @@ from . import (
     measure,
     montage,
     publish,
+    qc,
     render,
     shotcut,
     silences,
@@ -55,6 +56,7 @@ STAGES = (
     "shotcut",
     "subtitles",
     "publish",
+    "qc",
 )
 
 # Every external binary the harness drives, and what stops working without it.
@@ -132,7 +134,9 @@ def run_stage(name: str, ep: Episode) -> None:
             title = ""
         subtitles.run_stage(ep, PROMPTS, title)
     elif name == "publish":
-        publish.run(ep, _plan(ep))
+        publish.run(ep, _plan(ep), PROMPTS)
+    elif name == "qc":
+        qc.run(ep, _plan(ep), PROMPTS)
     else:
         raise ValueError(f"unknown stage: {name}")
 

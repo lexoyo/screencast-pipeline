@@ -54,7 +54,17 @@ def run_stage(ep: Episode, prompts_dir: Path, title: str = "") -> None:
     # the published video rather than the rush.
     try:
         data = transcript_mod.build(ep, prompts_dir, title=title, language=source_lang)
+        data = transcript_mod.verify_links(data)
         transcript_mod.write(ep, data, source_lang)
         (ep.work / "links.json").write_text(json.dumps(data.get("links") or [], indent=2))
     except Exception as exc:  # noqa: BLE001 — a missing document must not cost the render
         log(f"⚠ transcript skipped: {exc}")
+
+    # Same document in the other language, built from the subtitles just translated. Its
+    # links were already checked on the native pass, so they are only pruned here.
+    try:
+        data = transcript_mod.build(ep, prompts_dir, title=title, language=target)
+        data = transcript_mod.verify_links(data)
+        transcript_mod.write(ep, data, target)
+    except Exception as exc:  # noqa: BLE001
+        log(f"⚠ transcript {target} skipped: {exc}")

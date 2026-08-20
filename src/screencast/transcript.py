@@ -17,6 +17,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import links as links_mod
 from .episode import Episode
 from .parsing import extract_json_object, strip_code_fences
 from .shell import log, run
@@ -92,6 +93,32 @@ def build(ep: Episode, prompts_dir: Path, title: str, language: str) -> dict:
     proc = run([ep.cfg.claude_bin, "-p"], stdin_text=full)
     (ep.work / "transcript_raw.txt").write_text(proc.stdout)
     return json.loads(extract_json_object(strip_code_fences(proc.stdout)))
+
+
+def verify_links(data: dict) -> dict:
+    """Check every proposed URL, drop the dead ones from both the list and the document.
+
+    "Sure of it" is not "still there": a project moves, a repo is renamed, a domain lapses.
+    Nobody proof-reads a description before publishing, so the check happens here rather
+    than in someone's head.
+    """
+    proposed = data.get("links") or []
+    markdown = data.get("markdown", "")
+    urls = [x["url"] for x in proposed if x.get("url")] + links_mod.urls_in(markdown)
+    if not urls:
+        return data
+
+    results = links_mod.check_all(urls)
+    dead = [r for r in results.values() if not r.usable]
+    log(f"liens : {len(results)} vérifiés, {len(dead)} écarté(s)")
+    for line in links_mod.report(results):
+        log(line)
+
+    return {
+        **data,
+        "links": links_mod.prune(proposed, results),
+        "markdown": links_mod.unlink_dead(markdown, results),
+    }
 
 
 def write(ep: Episode, data: dict, language: str) -> Path:
