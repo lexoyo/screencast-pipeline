@@ -22,6 +22,14 @@ from .timeline import Edl, KeptSegment
 
 # A chapter overlay confirms what is being said; three seconds is a glance, not a read.
 CHAPTER_OVERLAY = 3.0
+
+# Only one overlay can be on screen at a time. When two want the same moment, the more
+# specific one wins: the programme is announced once in a video and cannot be moved, a
+# list point belongs to the sentence that states it, and a chapter title is a signpost
+# that can wait. Observed on a real take: the model tagged one segment as BOTH the
+# programme announcement and a list point, which drew a panel and a blurred card on top
+# of each other.
+OVERLAY_PRIORITY = {"plan": 3, "list": 2, "chapter": 1}
 # Intro and outro carry music and have to breathe. Matches the pilot's calibration.
 INTRO_SECONDS = 4.0
 OUTRO_SECONDS = 4.0
@@ -164,7 +172,7 @@ def build(
             )
         )
 
-    overlays.sort(key=lambda o: o.start)
+    overlays = resolve_conflicts(overlays)
     return SlidePlan(
         cards=cards,
         overlays=overlays,
@@ -173,5 +181,64 @@ def build(
     )
 
 
+def resolve_conflicts(overlays: list[Overlay]) -> list[Overlay]:
+    """Keep one overlay on screen at a time, highest priority first.
+
+    A lower-priority overlay that merely starts too early is trimmed rather than dropped —
+    a chapter title pushed a second later still does its job. One that would be left with
+    almost nothing is dropped instead: a half-second flash reads as a glitch.
+    """
+    ordered = sorted(overlays, key=lambda o: (-OVERLAY_PRIORITY.get(o.kind, 0), o.start))
+    kept: list[Overlay] = []
+    for candidate in ordered:
+        start, end = candidate.start, candidate.end
+        for existing in kept:
+            if start < existing.end and end > existing.start:
+                if start >= existing.start:
+                    start = existing.end          # push it after the one already there
+                else:
+                    end = existing.start          # or stop it before
+        if end - start >= 1.0:
+            kept.append(Overlay(candidate.kind, candidate.values, start, end))
+    return sorted(kept, key=lambda o: o.start)
+
+
 def _two_digits(value: str) -> str:
     return f"{int(value):02d}" if value.isdigit() else value
+
+
+def describe(plan: SlidePlan, body_duration: float) -> str:
+    """A readable timeline of where every slide lands — what `screencast plan` prints.
+
+    Worth having as its own view: placement bugs are invisible in a JSON dump and obvious
+    on a timeline, and checking them by rendering ten minutes of video is no way to work.
+    """
+    total = body_duration + plan.total_added
+    lines = [
+        f"durée finale : {_mmss(total)}  "
+        f"(corps {_mmss(body_duration)} + {plan.total_added:.0f}s de cartons)",
+        "",
+    ]
+
+    events: list[tuple[float, str]] = []
+    for card in plan.cards:
+        events.append((card.start, f"┏━ {card.kind.upper():8s} {_mmss(card.start)} → "
+                                   f"{_mmss(card.end)}   « {card.values.get('title','')} »"))
+    for overlay in plan.overlays:
+        label = overlay.values.get("title") or overlay.values.get("label") or ""
+        if overlay.kind == "plan":
+            label = " · ".join(overlay.values.get("chapters", []))[:60]
+        events.append((
+            overlay.start,
+            f"│  {overlay.kind:8s} {_mmss(overlay.start)} → {_mmss(overlay.end)} "
+            f"({overlay.duration:.1f}s)  « {label} »",
+        ))
+
+    for _, line in sorted(events, key=lambda e: e[0]):
+        lines.append(line)
+    return "\n".join(lines)
+
+
+def _mmss(seconds: float) -> str:
+    total = int(seconds)
+    return f"{total // 60}:{total % 60:02d}"

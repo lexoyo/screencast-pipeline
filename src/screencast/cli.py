@@ -23,6 +23,7 @@ from . import (
     render,
     shotcut,
     silences,
+    slideplan,
     subtitles,
     timeline,
     transcribe,
@@ -50,6 +51,10 @@ STAGES = (
     "subtitles",
     "publish",
 )
+
+# Channel identity — the name and wording that appear on the slides. Destined for its own
+# file, so that a second channel means a second file rather than an edit in the code.
+CHANNEL = {"name": "Alex Hoyau", "handle": "@AlexHoyau", "programme_label": "Au programme"}
 
 # Every external binary the harness drives, and what stops working without it.
 TOOLS = {
@@ -199,6 +204,23 @@ def _run_pipeline(root: Path, cfg, stages) -> int:
     return 0
 
 
+def cmd_plan(args, cfg) -> int:
+    """Show where the slides land, without rendering anything."""
+    ep = Episode(root=Path(args.episode).resolve(), cfg=cfg)
+    ep.ensure_dirs()
+    set_log_file(ep.log_file)
+    try:
+        plan = _plan(ep)
+    except (TimelineError, MissingInput) as exc:
+        print(exc, file=sys.stderr)
+        return 1
+    kept = plan.kept
+    layout = slideplan.build(plan, kept, channel=CHANNEL)
+    print()
+    print(slideplan.describe(layout, sum(seg.duration for seg in kept)))
+    return 0
+
+
 def cmd_doctor(args, cfg) -> int:
     from shutil import which
 
@@ -242,6 +264,10 @@ def main(argv: list[str] | None = None) -> int:
     one.add_argument("stage", choices=(*STAGES, "all"))
     one.add_argument("episode")
     one.set_defaults(func=cmd_run)
+
+    lay = sub.add_parser("plan", help="show where the slides land, render nothing")
+    lay.add_argument("episode")
+    lay.set_defaults(func=cmd_plan)
 
     doc = sub.add_parser("doctor", help="show config and check the toolchain")
     doc.set_defaults(func=cmd_doctor)
