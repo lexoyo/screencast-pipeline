@@ -71,6 +71,13 @@ class Metadata:
     description: str = ""
     tags: list[str] = field(default_factory=list)
     chapters: list[Chapter] = field(default_factory=list)
+    programme: list[str] = field(default_factory=list)
+    """The points the speaker announced OUT LOUD, in order.
+
+    Not the chapters: chapters cut the video up for YouTube and are detected, the
+    programme is what was promised aloud. The labels live here and only here — a card
+    carries a number, never its own copy of the wording, or the two drift apart."""
+
     intro: Bookend | None = None
     outro: Bookend | None = None
 
@@ -181,6 +188,7 @@ def parse(data: dict[str, Any]) -> Edl:
         description=str(meta_raw.get("description", "")),
         tags=[str(t) for t in meta_raw.get("tags") or []],
         chapters=sorted(chapters, key=lambda c: c.at),
+        programme=[str(x).strip() for x in meta_raw.get("programme") or [] if str(x).strip()],
         intro=Bookend.parse(meta_raw.get("intro")),
         outro=Bookend.parse(meta_raw.get("outro")),
     )

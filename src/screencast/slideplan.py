@@ -30,9 +30,17 @@ CHAPTER_OVERLAY = 3.0
 # programme announcement and a list point, which drew a panel and a blurred card on top
 # of each other.
 OVERLAY_PRIORITY = {"plan": 3, "list": 2, "chapter": 1}
+
+# A list card recalls a point announced earlier. Too soon after the programme panel and it
+# only repeats what is still fresh — the viewer read it seconds ago and now the speaker is
+# hidden behind it for nothing. Far enough away and it does its job: bringing back a promise
+# made minutes ago.
+LIST_CARD_MIN_GAP = 30.0
 # Intro and outro carry music and have to breathe. Matches the pilot's calibration.
 INTRO_SECONDS = 4.0
 OUTRO_SECONDS = 4.0
+# A list card hides the speaker, so it is capped rather than lasting the whole segment.
+LIST_CARD_SECONDS = 3.5
 
 
 @dataclass(frozen=True)
@@ -85,6 +93,8 @@ def build(
     intro_seconds: float = INTRO_SECONDS,
     outro_seconds: float = OUTRO_SECONDS,
     chapter_overlay: float = CHAPTER_OVERLAY,
+    list_card_seconds: float = LIST_CARD_SECONDS,
+    list_card_min_gap: float = LIST_CARD_MIN_GAP,
 ) -> SlidePlan:
     """Lay out the slides over an already-cut timeline."""
     channel = channel or {}
@@ -125,18 +135,21 @@ def build(
         )
 
     # --- programme: exactly as long as the sentence announcing it
+    programme_end: float | None = None
     for seg in kept:
-        if not seg.plan or not meta.chapters:
+        if not seg.plan or not meta.programme:
             continue
+        start = body_offset + seg.final_start
+        programme_end = body_offset + seg.final_end
         overlays.append(
             Overlay(
                 kind="plan",
                 values={
                     "kicker": channel.get("programme_label", "Au programme"),
-                    "chapters": [c.label for c in meta.chapters],
+                    "chapters": list(meta.programme),
                 },
-                start=body_offset + seg.final_start,
-                end=body_offset + seg.final_end,
+                start=start,
+                end=programme_end,
             )
         )
         break  # one programme per video, whatever the model tagged
@@ -156,19 +169,23 @@ def build(
             )
         )
 
-    # --- spoken enumeration points, for the length of the segment that announces them
+    # --- list cards, where each announced point actually BEGINS (not where it was
+    # announced: the card recalls the promise, it does not echo the sentence just spoken)
     for seg in kept:
         if not seg.list_item:
+            continue
+        start = body_offset + seg.final_start
+        if programme_end is not None and start - programme_end < list_card_min_gap:
             continue
         overlays.append(
             Overlay(
                 kind="list",
                 values={
                     "number": _two_digits(seg.list_item.n),
-                    "label": seg.list_item.label,
+                    "label": _point_label(seg.list_item, meta.programme),
                 },
-                start=body_offset + seg.final_start,
-                end=body_offset + seg.final_end,
+                start=start,
+                end=min(start + list_card_seconds, body_offset + body_duration),
             )
         )
 
@@ -201,6 +218,20 @@ def resolve_conflicts(overlays: list[Overlay]) -> list[Overlay]:
         if end - start >= 1.0:
             kept.append(Overlay(candidate.kind, candidate.values, start, end))
     return sorted(kept, key=lambda o: o.start)
+
+
+def _point_label(item, programme: list[str]) -> str:
+    """The wording of an announced point, taken from the programme.
+
+    The card carries a number; the words live in the programme and nowhere else. A card
+    that wrote its own copy would eventually say "L'installation" where the panel promised
+    "Installer Jan".
+    """
+    if item.n.isdigit():
+        index = int(item.n) - 1
+        if 0 <= index < len(programme):
+            return programme[index]
+    return item.label
 
 
 def _two_digits(value: str) -> str:

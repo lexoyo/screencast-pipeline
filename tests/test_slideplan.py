@@ -61,10 +61,77 @@ def test_the_programme_lasts_exactly_the_sentence_that_announces_it():
         {"start": 0.0, "end": 20.0, "drop": False, "scene": "large"},
         {"start": 20.0, "end": 28.0, "drop": False, "scene": "large", "plan": True},
     ]
-    plan = _plan(timeline, {"chapters": [{"at": 40, "label": "Un"}]})
+    plan = _plan(timeline, {"programme": ["Installer", "Utiliser"]})
     layout = build(plan, plan.kept, channel=CHANNEL)
     programme = next(o for o in layout.overlays if o.kind == "plan")
     assert (programme.start, programme.end) == (20.0, 28.0)
+
+
+def test_the_panel_shows_what_was_announced_not_the_detected_chapters():
+    # two different lists: chapters cut the video up for YouTube, the programme is the
+    # promise made out loud. Showing eight chapters where three points were promised
+    # would put words in the speaker's mouth.
+    timeline = [{"start": 0.0, "end": 30.0, "drop": False, "scene": "large", "plan": True}]
+    plan = _plan(timeline, {
+        "programme": ["Installer", "Utiliser", "Gérer les modèles"],
+        "chapters": [{"at": 1, "label": "A"}, {"at": 5, "label": "B"}, {"at": 9, "label": "C"},
+                     {"at": 12, "label": "D"}],
+    })
+    layout = build(plan, plan.kept, channel=CHANNEL)
+    panel = next(o for o in layout.overlays if o.kind == "plan")
+    assert panel.values["chapters"] == ["Installer", "Utiliser", "Gérer les modèles"]
+
+
+def test_a_card_takes_its_wording_from_the_programme():
+    # the card carries a number; the words live in the programme and nowhere else, or the
+    # panel promises "Installer Jan" and the card later says "L'installation"
+    timeline = [
+        {"start": 0.0, "end": 10.0, "drop": False, "scene": "large", "plan": True},
+        {"start": 10.0, "end": 200.0, "drop": False, "scene": "ecran"},
+        {"start": 200.0, "end": 220.0, "drop": False, "scene": "ecran",
+         "list_item": {"n": 2, "label": "libellé concurrent"}},
+    ]
+    plan = _plan(timeline, {"programme": ["Installer Jan", "L'utiliser au quotidien"]})
+    layout = build(plan, plan.kept, channel=CHANNEL)
+    card = next(o for o in layout.overlays if o.kind == "list")
+    assert card.values["label"] == "L'utiliser au quotidien"
+
+
+def test_a_card_too_close_to_the_panel_is_not_shown():
+    # it would only repeat what the viewer read seconds ago, while hiding the speaker
+    timeline = [
+        {"start": 0.0, "end": 10.0, "drop": False, "scene": "large", "plan": True},
+        {"start": 10.0, "end": 20.0, "drop": False, "scene": "ecran",
+         "list_item": {"n": 1, "label": "Installer"}},
+    ]
+    plan = _plan(timeline, {"programme": ["Installer", "Utiliser"]})
+    layout = build(plan, plan.kept, channel=CHANNEL, list_card_min_gap=30.0)
+    assert not any(o.kind == "list" for o in layout.overlays)
+
+
+def test_a_card_far_enough_from_the_panel_is_shown():
+    timeline = [
+        {"start": 0.0, "end": 10.0, "drop": False, "scene": "large", "plan": True},
+        {"start": 10.0, "end": 200.0, "drop": False, "scene": "ecran"},
+        {"start": 200.0, "end": 230.0, "drop": False, "scene": "ecran",
+         "list_item": {"n": 1, "label": "Installer"}},
+    ]
+    plan = _plan(timeline, {"programme": ["Installer", "Utiliser"]})
+    layout = build(plan, plan.kept, channel=CHANNEL, list_card_min_gap=30.0)
+    assert any(o.kind == "list" for o in layout.overlays)
+
+
+def test_a_card_is_capped_and_does_not_last_the_whole_segment():
+    # it hides the speaker: a 40-second segment must not mean 40 seconds behind a card
+    timeline = [
+        {"start": 0.0, "end": 200.0, "drop": False, "scene": "large"},
+        {"start": 200.0, "end": 240.0, "drop": False, "scene": "ecran",
+         "list_item": {"n": 1, "label": "Installer"}},
+    ]
+    plan = _plan(timeline, {"programme": ["Installer"]})
+    layout = build(plan, plan.kept, channel=CHANNEL, list_card_seconds=3.5)
+    card = next(o for o in layout.overlays if o.kind == "list")
+    assert card.duration == 3.5
 
 
 def test_two_overlays_never_share_a_moment():

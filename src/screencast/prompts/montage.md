@@ -35,7 +35,10 @@ Output schema (exact keys):
     "title": "punchy, <=70 chars, in the spoken language",
     "description": "2-4 short paragraphs: what's demoed + why it matters. spoken language.",
     "tags": ["...", "..."],                    // 6-12, lowercase
-    "chapters": [ { "at": sec, "label": "..." } ] // `at` in ORIGINAL seconds; remapped later
+    "chapters": [ { "at": sec, "label": "..." } ], // `at` in ORIGINAL seconds; remapped later
+    "programme": ["...", "..."],               // the points ANNOUNCED OUT LOUD. omit if none.
+    "intro": { "title": "...", "subtitle": "..." },  // opening card. omit if not worth one.
+    "outro": { "title": "...", "cta": "..." }        // closing card. omit if not worth one.
   },
   "timeline": [
     {
@@ -43,7 +46,8 @@ Output schema (exact keys):
       "drop": true | false,                    // true = removed from final
       "scene": "ecran" | "large" | "serre",    // ignored when drop=true
       "reason": "filler|falsestart|repeat|fumble|ecran|large|serre",
-      "list_item": { "n": 3, "label": "..." }  // OPTIONAL, see below. omit or null otherwise
+      "plan": true,                            // OPTIONAL: the segment ANNOUNCING the programme
+      "list_item": { "n": 3 }                  // OPTIONAL: where point 3 actually STARTS
     }
   ]
 }
@@ -78,19 +82,29 @@ Output schema (exact keys):
   correction filler, KEEP only the corrected statement. Result should read as if said cleanly.
 - **Default to `large`** when talking to camera; switch to **`ecran`** the moment the words
   point at the screen; use **`serre`** only for a brief emphatic line.
-- **`list_item` — punctuate a spoken enumeration.** When the speaker announces a numbered
-  point ("premièrement…", "deuxième chose…", "le troisième truc c'est…", "first…", "next…"),
-  set `list_item` on the segment where that point is **announced**. The renderer blurs and
-  darkens the shot and stamps the number huge with its label underneath — it makes a list
-  readable for a viewer who is only half-listening.
-  - `n` = the point's rank (1, 2, 3…), `label` = the point in **4-8 words max**, in the
-    spoken language. Not a transcript of the sentence: the title of the point.
-  - Put it on a **short** segment (the announcement, a few seconds) — the effect lasts the
-    whole segment, and hiding the speaker for 30 s is a bad idea.
-  - Only for a **real enumeration the speaker states out loud**. Do not invent a list, and do
-    not use it as a chapter marker — chapters already exist.
-  - Prefer `large` or `serre` for these segments: the point of the effect is that the face
-    dissolves behind the text. On `ecran`, it would blur the very thing being demoed.
+- **The programme, and the cards that recall it.** These work as a pair and are the one
+  place where timing matters more than wording.
+  - `metadata.programme` = the points the speaker announces OUT LOUD ("je vais vous montrer
+    l'installation, l'utilisation, puis la gestion des modèles"). 2-5 entries, 3-6 words
+    each, in the spoken language. If no programme is announced, omit the field — do not
+    manufacture one out of the chapters.
+  - `plan: true` on the segment where that ANNOUNCEMENT is spoken. The panel is shown for
+    exactly as long as that sentence, so it accompanies the words instead of interrupting.
+  - `list_item: {"n": 2}` on the segment where **point 2 actually BEGINS** — usually minutes
+    later, when the speaker moves on to it. NOT where it was announced. The card exists to
+    bring back a promise made earlier; placed next to the announcement it would only repeat
+    what the viewer just read, while hiding the speaker behind a full-screen card.
+  - The card carries the NUMBER only. Its wording comes from `programme`, so the panel and
+    the card can never drift apart.
+  - Only for a real enumeration stated out loud. Do not invent one, and do not use it as a
+    chapter marker — chapters exist separately.
+
+- **`intro` / `outro`** are full-screen cards with music, so they lengthen the video by a
+  few seconds each. `intro.title` is not the YouTube title: that one carries a keyword, this
+  one has to be read in two seconds. `outro.cta` asks for ONE thing — a viewer who reached
+  the end acts on a single clear ask and on nothing at all if given a list. Omit either card
+  when the take does not warrant it rather than filling it with something empty.
+
 - **Chapters**: 3-8, at real topic shifts, `at` = original second where the topic starts.
 - **metadata language** = the spoken language. Title sells the value, not "screencast of X".
 
