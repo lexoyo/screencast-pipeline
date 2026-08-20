@@ -76,7 +76,6 @@ class Config:
     list_blur: float
     list_darken: float
     list_fade: float
-    list_font: Path
 
     # -- silence removal
     silence_db: str
@@ -171,7 +170,6 @@ def load(config_path: Path, overrides: dict[str, str] | None = None) -> Config:
         list_blur=_num(raw, "LIST_BLUR", "26", float),
         list_darken=_num(raw, "LIST_DARKEN", "-0.14", float),
         list_fade=_num(raw, "LIST_FADE", "0.3", float),
-        list_font=path_of("LIST_FONT", "/usr/share/fonts/rsms-inter-fonts/InterDisplay-Black.ttf"),
         silence_db=_get(raw, "SILENCE_DB", "-30dB"),
         silence_min=_num(raw, "SILENCE_MIN", "0.6", float),
         silence_pad=_num(raw, "SILENCE_PAD", "0.15", float),

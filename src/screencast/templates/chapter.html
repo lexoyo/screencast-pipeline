@@ -12,14 +12,27 @@
  * read "02 Installation" right below a panel promising "02 Utiliser le chat": two
  * numbering schemes on screen, and the viewer can only conflate them. A chapter is a
  * signpost, not a list. */
+/* Anchored at the TOP, not the bottom. The lower fifth of the frame is not ours: YouTube
+ * puts its subtitles there — and we ship SRT files, so we actively invite that collision —
+ * and the player's own control bar appears there on every mouse move. At bottom:108px this
+ * band sat between 10% and 24% from the bottom, squarely in the subtitle lane.
+ *
+ * The handle rides along on the right. The band already appears eight times in a fifteen
+ * minute video, so the channel goes from one appearance (the last frame) to eight, for the
+ * cost of one span — no new object to place, no new collision to reason about. */
 .bar {
-  position: absolute; left: 0; right: 0; bottom: 108px;
+  position: absolute; left: 0; right: 0; top: 0;
   padding: 40px 130px;
   background: var(--overlay-bg);
   border-left: 14px solid var(--rule);
+  display: flex; align-items: baseline; justify-content: space-between; gap: 60px;
 }
-.title { font-size: 66px; font-weight: 600; color: var(--fg); line-height: 1.08; }
+.title { font-size: 66px; font-weight: 400; color: var(--fg); line-height: 1.08;
+         letter-spacing: .01em; }
+.handle { font-size: 40px; font-weight: 400; color: var(--muted); letter-spacing: .06em;
+          white-space: nowrap; }
 </style>
 <div class="bar">
   <div class="title">$title</div>
+  <div class="handle">$handle</div>
 </div>

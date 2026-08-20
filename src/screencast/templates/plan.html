@@ -5,18 +5,20 @@
 /* The programme, shown while it is being announced out loud. It stays for as long as that
  * sentence lasts — so it is sized to be read in a single pass, not studied. */
 .panel {
-  position: absolute; left: 130px; bottom: 120px;
+  /* Top, for the same reason as the chapter band: at bottom:120px this panel ran from
+     11% to 51% of the frame, so subtitles landed on its last items. */
+  position: absolute; left: 130px; top: 120px;
   padding: 54px 90px 58px 76px;
   background: var(--overlay-bg);
   border-left: 14px solid var(--rule);
   max-width: 1400px;
 }
-.kicker { font-size: 30px; font-weight: 700; letter-spacing: .2em;
+.kicker { font-size: 40px; font-weight: 500; letter-spacing: .22em;
           text-transform: uppercase; color: var(--muted); margin-bottom: 34px; }
 ul { list-style: none; display: flex; flex-direction: column; gap: 26px; }
 li { display: flex; align-items: baseline; gap: 30px;
-     font-size: 50px; font-weight: 500; color: var(--fg); }
-li .n { font-size: 30px; font-weight: 700; color: var(--muted);
+     font-size: 54px; font-weight: 400; color: var(--fg); }
+li .n { font-size: 40px; font-weight: 500; color: var(--muted);
         letter-spacing: .1em; min-width: 54px; }
 </style>
 <div class="panel">

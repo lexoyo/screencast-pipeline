@@ -187,7 +187,7 @@ def build(
         overlays.append(
             Overlay(
                 kind="chapter",
-                values={"title": chapter.label},
+                values={"title": chapter.label, "handle": channel.get("handle", "")},
                 start=start,
                 end=min(start + chapter_overlay, body_offset + body_duration),
             )

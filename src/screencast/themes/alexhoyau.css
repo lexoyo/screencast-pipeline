@@ -14,9 +14,19 @@
   --muted: #9db4c8;       /* numbers, kickers, secondary lines */
   --rule: #4a7291;        /* accent rules and separators */
 
-  /* Same stack as the site. No web fonts: a slide must render identically in two years
-     with no network, and a missing font would silently reflow every title. */
-  --font: "Helvetica Neue", Helvetica, "Liberation Sans", Arial, sans-serif;
+  /* No web fonts: a slide must render identically in two years with no network, and a
+     missing font would silently reflow every title.
+     Inter Display carries the stack because the brand sheet asks for thin weights and
+     Helvetica Neue is not installed here — the rendering fell through to Liberation Sans,
+     which ships Regular and Bold only. A `font-weight: 200` there renders as 400, so the
+     identity was physically unreachable. Inter is on the machine, Thin through Black. */
+  /* Inter FIRST, and Helvetica Neue deliberately not at the head of the stack.
+     fontconfig answers every request: asking for a font that is not installed silently
+     returns a substitute, so Chromium considers "Helvetica Neue" found and never reaches
+     Inter. Verified by rendering the three side by side — the "Helvetica Neue" line came
+     out at normal weight where a font-weight:200 was asked for, while the Inter line was
+     genuinely thin. Leading with the missing font makes every thin weight a no-op. */
+  --font: "Inter Display", Inter, "Helvetica Neue", "Liberation Sans", Arial, sans-serif;
 
   /* Overlay bars sit over the speaker's face, so they are translucent enough to keep the
      person visible and opaque enough to keep the text legible over a bright kitchen. */
