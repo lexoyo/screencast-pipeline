@@ -228,3 +228,88 @@ def test_no_chapter_band_where_a_card_already_named_that_chapter():
     layout = build(plan, plan.kept, channel=CHANNEL)
     bands = [o.values["title"] for o in layout.overlays if o.kind == "chapter"]
     assert "Utiliser le chat" not in bands
+
+
+# --- the intro card after the spoken summary, and the tool panels ------------------
+
+SUMMARY_BODY = [
+    {"start": 0.0, "end": 20.0, "drop": False, "scene": "large"},                 # hook
+    {"start": 20.0, "end": 30.0, "drop": False, "scene": "large", "plan": True},  # sommaire
+    {"start": 30.0, "end": 200.0, "drop": False, "scene": "ecran"},               # le corps
+]
+CHAPTERS = [
+    {"at": 32, "label": "Premier"},
+    {"at": 100, "label": "Deuxième"},
+    {"at": 160, "label": "Troisième"},
+]
+
+
+def _summary_plan(**meta):
+    return _plan(SUMMARY_BODY, {"intro": {"title": "Un titre"}, "chapters": CHAPTERS, **meta})
+
+
+def test_the_intro_card_lands_after_the_spoken_summary():
+    # not at 0:00: a title card before the first word is a toll gate, and Alex's shape is
+    # hook, then summary, then part one
+    plan = _summary_plan()
+    layout = _summary_plan and build(plan, plan.kept, channel=CHANNEL, intro_seconds=6.0)
+    intro = next(c for c in layout.cards if c.kind == "intro")
+    assert intro.start == 30.0     # the summary segment ends there
+    assert intro.after_index == 1  # it follows the second kept segment
+
+
+def test_nothing_before_the_intro_card_is_shifted():
+    plan = _summary_plan()
+    layout = build(plan, plan.kept, channel=CHANNEL, intro_seconds=6.0)
+    programme = next(o for o in layout.overlays if o.kind == "plan")
+    assert programme.start == 20.0   # the hook keeps its own timing
+    assert programme.end == 30.0
+
+
+def test_everything_after_the_intro_card_is_pushed_back_by_its_length():
+    plan = _summary_plan()
+    layout = build(plan, plan.kept, channel=CHANNEL, intro_seconds=6.0)
+    third = next(o for o in layout.overlays if o.values.get("title") == "Troisième")
+    assert third.start == 160.0 + 6.0
+
+
+def test_with_no_summary_the_intro_still_opens_the_video():
+    # a video where nothing was tagged `plan` keeps the old behaviour
+    plan = _plan(BODY, {"intro": {"title": "Un titre"},
+                        "chapters": [{"at": 10, "label": "Premier"}]})
+    layout = build(plan, plan.kept, channel=CHANNEL, intro_seconds=4.0)
+    intro = next(c for c in layout.cards if c.kind == "intro")
+    assert intro.start == 0.0
+    assert intro.after_index is None
+    assert layout.body_offset == 4.0
+
+
+def test_a_tool_panel_carries_the_name_what_it_is_and_the_url():
+    plan = _summary_plan(tools=[{"at": 130, "name": "Jan", "what": "un LLM en local",
+                                 "url": "https://jan.ai"}])
+    layout = build(plan, plan.kept, channel=CHANNEL, intro_seconds=6.0)
+    tool = next(o for o in layout.overlays if o.kind == "tool")
+    assert tool.values == {"name": "Jan", "what": "un LLM en local", "url": "https://jan.ai"}
+    assert tool.start == 130.0 + 6.0
+
+
+def test_tools_named_in_one_breath_do_not_become_a_slideshow():
+    # Alex names five projects within seconds at 6:23 on a real take
+    plan = _summary_plan(tools=[{"at": t, "name": f"Outil{t}"} for t in (120, 122, 124, 126)])
+    layout = build(plan, plan.kept, channel=CHANNEL, intro_seconds=6.0)
+    assert len([o for o in layout.overlays if o.kind == "tool"]) == 1
+
+
+def test_a_tool_named_in_a_cut_stretch_gets_no_panel():
+    plan = _plan(BODY, {"intro": {"title": "T"}, "chapters": CHAPTERS,
+                        "tools": [{"at": 65, "name": "Coupé"}]})
+    layout = build(plan, plan.kept, channel=CHANNEL)
+    assert not [o for o in layout.overlays if o.values.get("name") == "Coupé"]
+
+
+def test_a_chapter_wins_over_a_tool_panel_at_the_same_moment():
+    plan = _summary_plan(tools=[{"at": 100, "name": "Jan"}])
+    layout = build(plan, plan.kept, channel=CHANNEL, intro_seconds=6.0)
+    at_100 = [o for o in layout.overlays if abs(o.start - 106.0) < 0.01]
+    assert len(at_100) == 1
+    assert at_100[0].kind == "chapter"

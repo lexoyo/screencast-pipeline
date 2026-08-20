@@ -5,7 +5,6 @@ from pathlib import Path
 import pytest
 
 from screencast.music import (
-    BED_LUFS_OFFSET,
     FADE_OUT,
     LEAD_IN,
     TAIL,
@@ -13,7 +12,6 @@ from screencast.music import (
     mix_filter,
     plan_beds,
     seed_for,
-    target_for,
     with_gains,
     write_prompts,
 )
@@ -46,36 +44,8 @@ def test_music_never_starts_before_the_video():
     assert plan_beds(layout, TRACKS, bed_duration=60)[0].start == 0.0
 
 
-def test_overlays_close_together_share_one_continuous_bed():
-    layout = _layout(
-        overlays=[
-            Overlay("chapter", {}, 10.0, 13.0),
-            Overlay("list", {}, 14.0, 17.5),
-        ]
-    )
-    beds = plan_beds(layout, TRACKS, bed_duration=60)
-    assert len(beds) == 1
-    assert beds[0].end == 17.5 + TAIL
 
 
-def test_each_overlay_bed_reads_a_different_part_of_the_track():
-    layout = _layout(overlays=[Overlay("chapter", {}, t, t + 3.0) for t in (10.0, 100.0, 200.0)])
-    beds = plan_beds(layout, TRACKS, bed_duration=120)
-    assert len({b.source_offset for b in beds}) == len(beds)
-
-
-def test_the_bed_track_is_rewound_when_exhausted():
-    layout = _layout(overlays=[Overlay("chapter", {}, t, t + 3.0) for t in (10, 100, 200, 300)])
-    beds = plan_beds(layout, TRACKS, bed_duration=12)
-    assert any(b.source_offset == 0.0 for b in beds[1:])
-
-
-def test_no_bed_reads_past_the_end_of_its_track():
-    layout = _layout(overlays=[Overlay("chapter", {}, t, t + 3.0) for t in (10, 60, 110)])
-    duration = 20.0
-    for bed in plan_beds(layout, TRACKS, duration):
-        if bed.track == TRACKS["bed"]:
-            assert bed.source_offset + bed.duration <= duration
 
 
 def test_a_missing_track_produces_no_music_rather_than_a_crash():
@@ -132,16 +102,6 @@ def test_the_bed_prompt_is_copied_untouched(tmp_path):
     assert "x" not in bed.split("---")[-1]
 
 
-def test_cards_are_louder_than_beds():
-    # nobody speaks over a card; the bed sits well under the voice
-    layout = _layout(
-        cards=[Card("intro", {}, 0.0, 4.0)], overlays=[Overlay("chapter", {}, 100.0, 103.0)]
-    )
-    beds = with_gains(plan_beds(layout, TRACKS, 60), TRACKS, -16.0, lambda *_: -14.0)
-    card = next(b for b in beds if b.track == TRACKS["intro"])
-    bed = next(b for b in beds if b.track == TRACKS["bed"])
-    assert bed.gain_db == pytest.approx(card.gain_db + BED_LUFS_OFFSET)
-
 
 def test_a_quiet_stretch_is_pushed_up_and_a_loud_one_down():
     # the point of targeting a level: a fixed multiplier put the first real intro at
@@ -173,12 +133,20 @@ def test_a_stretch_that_could_not_be_measured_gets_no_gain():
     assert beds[0].gain_db == 0.0
 
 
-def test_the_target_depends_on_which_track_it_is():
+
+
+def test_no_music_plays_under_the_speech():
+    # Alex, after watching two finished videos: the only music you notice is the intro,
+    # because it is the only one not competing with a voice. A bed at -18 LUFS under the
+    # words is inaudible, and it cost a GPU generation per video.
     layout = _layout(
-        cards=[Card("intro", {}, 0.0, 4.0)], overlays=[Overlay("chapter", {}, 100.0, 103.0)]
+        cards=[Card("intro", {}, 0.0, 4.0)],
+        overlays=[Overlay("chapter", {}, 100.0, 103.0), Overlay("list", {}, 200.0, 203.5)],
     )
-    beds = plan_beds(layout, TRACKS, 60)
-    card = next(b for b in beds if b.track == TRACKS["intro"])
-    bed = next(b for b in beds if b.track == TRACKS["bed"])
-    assert target_for(card, TRACKS, -16.0) == -16.0
-    assert target_for(bed, TRACKS, -16.0) == -34.0
+    beds = plan_beds(layout, TRACKS)
+    assert [b.track for b in beds] == [TRACKS["intro"]]
+
+
+def test_overlays_alone_produce_no_music_at_all():
+    layout = _layout(overlays=[Overlay("chapter", {}, 10.0, 13.0)])
+    assert plan_beds(layout, TRACKS) == []

@@ -1,0 +1,27 @@
+<!doctype html><meta charset="utf-8">
+<style>$theme</style>
+<style>$base</style>
+<style>
+/* The only panel that tells the viewer something they do not already have. The others
+ * repeat what was just said or what YouTube already shows above the seek bar; this one
+ * carries a URL, and a URL cannot be heard. Saying "browser MCP" out loud leaves nobody
+ * able to spell it or find it.
+ *
+ * Sits above the subtitle lane, like everything else — the brand sheet keeps the lower
+ * fifth for YouTube's captions and the player controls. */
+.tool {
+  position: absolute; left: 130px; bottom: 300px;
+  background: var(--overlay-strong-bg);
+  border-left: 14px solid var(--rule);
+  padding: 32px 52px; max-width: 1100px;
+}
+.name { font-size: 64px; font-weight: 300; color: var(--fg); line-height: 1.05; }
+.what { font-size: 44px; font-weight: 400; color: var(--muted); margin-top: 14px; }
+.url  { font-size: 40px; font-weight: 400; color: var(--rule); margin-top: 18px;
+        letter-spacing: .04em; }
+</style>
+<div class="tool">
+  <div class="name">$name</div>
+  <div class="what">$what</div>
+  <div class="url">$url</div>
+</div>

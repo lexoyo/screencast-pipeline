@@ -142,14 +142,20 @@ def build(ep: Episode, plan: Edl, layout: SlidePlan | None = None) -> str:
     track_serre: list[str] = []
     track_audio: list[str] = []
 
-    # An intro card pushes the body back. In the project that is a leading blank on every
-    # existing track, so the body sits where the export puts it.
+    # An intro card pushes the body back. In the project that is a blank of the same
+    # length on every existing track, so the body sits where the export puts it.
+    # It is a LEADING blank only when the card opens the video; since the card now lands
+    # after the spoken summary, the blank is inserted at that point instead — otherwise
+    # the project drifts out of sync with final.mp4 by the length of the card.
     body_offset = layout.body_offset if layout else 0.0
+    intro_card = next((c for c in layout.cards if c.kind == "intro"), None) if layout else None
+    gap_after = intro_card.after_index if intro_card else None
+    gap_length = intro_card.duration if intro_card else 0.0
     if body_offset > 0:
         for track in (track_ecran, track_large, track_serre, track_audio):
             track.append(_blank(body_offset))
 
-    for seg in kept:
+    for index, seg in enumerate(kept):
         cam_start = max(0.0, seg.start - offset)
         cam_end = seg.end - offset
         lead = max(0.0, offset - seg.start)
@@ -161,6 +167,12 @@ def build(ep: Episode, plan: Edl, layout: SlidePlan | None = None) -> str:
         track_large.extend(face_clip if seg.scene == "large" else [_blank(seg.duration)])
         track_serre.extend(face_clip if seg.scene == "serre" else [_blank(seg.duration)])
         track_audio.append(_entry("screen_a", seg.start, seg.end))
+
+        if gap_after is not None and index == gap_after:
+            # The intro card plays here: the video tracks hold nothing, the card is on the
+            # slide track and its music on the music track.
+            for track in (track_ecran, track_large, track_serre, track_audio):
+                track.append(_blank(gap_length))
 
     # --- slides: cards and overlays share one track, in final-timeline order
     slide_images: list[Path] = []

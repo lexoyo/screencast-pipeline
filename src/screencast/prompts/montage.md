@@ -36,6 +36,7 @@ Output schema (exact keys):
     "description": "2-4 short paragraphs: what's demoed + why it matters. spoken language.",
     "tags": ["...", "..."],                    // 6-12, lowercase
     "chapters": [ { "at": sec, "label": "..." } ], // `at` in ORIGINAL seconds; remapped later
+    "tools": [ { "at": sec, "name": "...", "what": "...", "url": "https://..." } ],
     "intro": { "title": "...", "subtitle": "..." },  // opening card. omit if not worth one.
     "outro": { "title": "...", "cta": "..." },       // closing card. omit if not worth one.
     "jingle": { "intro": "...", "outro": "..." }     // the lines SUNG over those cards
@@ -86,6 +87,29 @@ Output schema (exact keys):
   each one when it starts, and the description carries them for YouTube. All three read the
   same `label`, word for word — a video that promises "Installer Jan" and then captions the
   same passage "Installation" reads as two different things to anyone who noticed the first.
+## The tools
+
+Every project, tool or service **named out loud**, at the second of its FIRST mention. Each
+one becomes a small panel on screen for three seconds: the name, what it is, and where to
+find it.
+
+This is the only panel that gives the viewer something the audio cannot. A URL is not
+audible — someone who hears "browser MCP" has no idea how to spell it or where it lives.
+The others repeat a title that is already on screen or in the chapter list.
+
+- `name` — the official spelling. `whisper.cpp`, not "Whisper CPP".
+- `what` — **five to eight words**, what it is, for someone who has never heard of it. It is
+  read in three seconds over a moving picture: "app de bureau pour un LLM local", not a
+  sentence with a verb and a subordinate clause.
+- `url` — the official home page. **Only one you are sure of.** Leave it empty rather than
+  guess: a wrong URL on screen is worse than none, and nobody proof-reads a video frame.
+- `at` — the second of the first mention, in ORIGINAL source seconds.
+
+Do NOT list: generic words (a browser, an editor), the speaker's own channel or products
+he is presenting as his own, or anything merely alluded to without being named. If the
+speaker names five projects in one breath, list them all anyway — only one panel will be
+shown, and the choice of which is not yours.
+
   - **If the speaker announces a plan out loud, the chapters ARE that plan** — exactly,
     one chapter per announced point, no more. "je vous montre comment l'installer, vite
     fait comment l'utiliser, et comment gérer les modèles" is THREE chapters. Adding a

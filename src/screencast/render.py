@@ -114,8 +114,13 @@ def run(ep: Episode, plan: Edl, layout: SlidePlan | None = None) -> None:
         # once as card28, from the same values.
         for card in intro:
             path = compose.render_card(ep, card, layout.cards.index(card))
-            log(f"  card {card.kind} ({card.duration:.0f}s)")
-            parts.insert(0, f"file '{path.as_posix()}'")
+            # after_index is the kept segment the card follows — the spoken summary, in
+            # practice. `parts` holds one entry per kept segment in order, so inserting
+            # just after it puts the card exactly where the voice stops. None = the old
+            # behaviour, at the very front, for a video with no summary.
+            position = 0 if card.after_index is None else card.after_index + 1
+            log(f"  card {card.kind} ({card.duration:.0f}s) after segment {position}")
+            parts.insert(position, f"file '{path.as_posix()}'")
         for card in outro:
             path = compose.render_card(ep, card, layout.cards.index(card))
             log(f"  card {card.kind} ({card.duration:.0f}s)")

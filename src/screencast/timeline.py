@@ -46,6 +46,25 @@ class Chapter:
 
 
 @dataclass(frozen=True)
+class Tool:
+    """A project named out loud, and where it was first named.
+
+    Comes from the montage pass rather than from the transcript one, even though the
+    transcript already lists the same projects for the description. The reason is order:
+    the transcript is built from the FINISHED subtitles, which only exist after the render
+    — far too late to put anything on screen. The brain reading the rush for the edit is
+    the first moment these are known.
+
+    `at` is a source timestamp, like a chapter's: the cut has not happened yet.
+    """
+
+    at: float
+    name: str
+    what: str = ""
+    url: str = ""
+
+
+@dataclass(frozen=True)
 class Bookend:
     """The intro or outro card: a real segment, with music, that lengthens the video.
 
@@ -73,6 +92,7 @@ class Metadata:
     chapters: list[Chapter] = field(default_factory=list)
     intro: Bookend | None = None
     outro: Bookend | None = None
+    tools: list[Tool] = field(default_factory=list)
     jingle: dict[str, str] = field(default_factory=dict)
     """The lines SUNG over the intro and outro cards, keyed "intro" / "outro".
 
@@ -183,11 +203,22 @@ def parse(data: dict[str, Any]) -> Edl:
         for c in meta_raw.get("chapters") or []
         if "at" in c
     ]
+    tools = [
+        Tool(
+            at=float(t["at"]),
+            name=str(t.get("name", "")).strip(),
+            what=str(t.get("what", "")).strip(),
+            url=str(t.get("url", "")).strip(),
+        )
+        for t in meta_raw.get("tools") or []
+        if "at" in t and str(t.get("name", "")).strip()
+    ]
     metadata = Metadata(
         title=str(meta_raw.get("title", "")),
         description=str(meta_raw.get("description", "")),
         tags=[str(t) for t in meta_raw.get("tags") or []],
         chapters=sorted(chapters, key=lambda c: c.at),
+        tools=sorted(tools, key=lambda t: t.at),
         intro=Bookend.parse(meta_raw.get("intro")),
         outro=Bookend.parse(meta_raw.get("outro")),
         jingle={

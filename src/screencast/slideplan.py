@@ -29,20 +29,24 @@ CHAPTER_OVERLAY = 3.0
 # that can wait. Observed on a real take: the model tagged one segment as BOTH the
 # programme announcement and a list point, which drew a panel and a blurred card on top
 # of each other.
-OVERLAY_PRIORITY = {"plan": 3, "list": 2, "chapter": 1}
+# A tool panel sits below the others: it is useful, but a chapter or a list card marks a
+# structural moment, and two panels at once is one too many.
+OVERLAY_PRIORITY = {"plan": 4, "list": 3, "chapter": 2, "tool": 1}
 
 # A list card recalls a point announced earlier. Too soon after the programme panel and it
 # only repeats what is still fresh — the viewer read it seconds ago and now the speaker is
 # hidden behind it for nothing. Far enough away and it does its job: bringing back a promise
 # made minutes ago.
 LIST_CARD_MIN_GAP = 30.0
+TOOL_SECONDS = 3.5
+TOOL_MIN_GAP = 12.0
 
 # A chapter band right after the intro card, or right after the programme panel, says again
 # what was just said. Both were observed on the first real take: chapter one landed four
 # seconds after the intro, chapter two the very second the panel left.
 CHAPTER_MIN_GAP = 8.0
 # Intro and outro carry music and have to breathe. Matches the pilot's calibration.
-INTRO_SECONDS = 4.0
+INTRO_SECONDS = 6.0
 OUTRO_SECONDS = 4.0
 # A list card hides the speaker, so it is capped rather than lasting the whole segment.
 LIST_CARD_SECONDS = 3.5
@@ -56,6 +60,12 @@ class Card:
     values: dict[str, str]
     start: float
     duration: float
+    after_index: int | None = None
+    """Which kept segment this card follows in the concat, or None for first/last.
+
+    The intro no longer opens the video: it lands after the spoken summary, which is a
+    position in the middle of the body. The renderer needs the segment index, not just a
+    timestamp, because it assembles a list of files."""
 
     @property
     def end(self) -> float:
@@ -108,7 +118,35 @@ def build(
     cards: list[Card] = []
     overlays: list[Overlay] = []
 
-    body_offset = 0.0
+    body_duration = sum(seg.duration for seg in kept)
+
+    # --- where the intro card goes.
+    #
+    # Not at 0:00 any more. A title card before the first word is a toll gate: the viewer
+    # clicked to see the thing, not the branding, and the 30-second retention figure feeds
+    # the recommendations. Alex's own shape is hook, then spoken summary, then part one —
+    # so the card lands right after the summary, where his voice stops anyway. The jingle
+    # becomes a breath between the promise and the content, and it is the only music left
+    # in the video that plays alone.
+    #
+    # The summary segment is already known: it is the one the brain tagged `plan`, the
+    # same one that drives the programme panel. Nothing new to ask the model.
+    summary_index = next((i for i, seg in enumerate(kept) if seg.plan and meta.chapters), None)
+    insert_at = kept[summary_index].final_end if summary_index is not None else 0.0
+
+    def shift(t: float, *, ends: bool = False) -> float:
+        """A body timestamp projected onto the final timeline.
+
+        `ends=True` for the end of something that stops exactly where the card begins —
+        the summary panel does, and without this it would be pushed past the card and
+        stay on screen over it.
+        """
+        if not meta.intro:
+            return t
+        crossed = t > insert_at if ends else t >= insert_at
+        return t + intro_seconds if crossed else t
+
+    body_offset = intro_seconds if (meta.intro and insert_at == 0.0) else 0.0
     if meta.intro:
         cards.append(
             Card(
@@ -121,13 +159,11 @@ def build(
                     "title": meta.intro.title,
                     "subtitle": meta.intro.subtitle,
                 },
-                start=0.0,
+                start=insert_at,
                 duration=intro_seconds,
+                after_index=summary_index,
             )
         )
-        body_offset = intro_seconds
-
-    body_duration = sum(seg.duration for seg in kept)
 
     if meta.outro:
         cards.append(
@@ -144,7 +180,7 @@ def build(
                     "cta": channel.get("cta", ""),
                     "handle": channel.get("handle", ""),
                 },
-                start=body_offset + body_duration,
+                start=shift(body_duration),
                 duration=outro_seconds,
             )
         )
@@ -154,8 +190,8 @@ def build(
     for seg in kept:
         if not seg.plan or not meta.chapters:
             continue
-        start = body_offset + seg.final_start
-        programme_end = body_offset + seg.final_end
+        start = shift(seg.final_start)
+        programme_end = shift(seg.final_end, ends=True)
         overlays.append(
             Overlay(
                 kind="plan",
@@ -188,8 +224,8 @@ def build(
         # remap_to_final already projects a source second onto the cut body; an intro
         # simply pushes that body back, so the slides only add a constant. Nothing about
         # the remapping itself changes.
-        start = body_offset + remap_to_final(chapter.at, kept)
-        if start < body_offset + chapter_min_gap:
+        start = shift(remap_to_final(chapter.at, kept))
+        if start < shift(0.0) + chapter_min_gap:
             continue  # too close behind the intro card
         if programme_end is not None and abs(start - programme_end) < chapter_min_gap:
             continue  # butting against the programme panel
@@ -198,7 +234,7 @@ def build(
                 kind="chapter",
                 values={"title": chapter.label, "handle": channel.get("handle", "")},
                 start=start,
-                end=min(start + chapter_overlay, body_offset + body_duration),
+                end=min(start + chapter_overlay, shift(body_duration)),
             )
         )
 
@@ -207,7 +243,7 @@ def build(
     for seg in kept:
         if not seg.list_item:
             continue
-        start = body_offset + seg.final_start
+        start = shift(seg.final_start)
         if programme_end is not None and start - programme_end < list_card_min_gap:
             continue
         overlays.append(
@@ -218,9 +254,35 @@ def build(
                     "label": _point_label(seg.list_item, [c.label for c in meta.chapters]),
                 },
                 start=start,
-                end=min(start + list_card_seconds, body_offset + body_duration),
+                end=min(start + list_card_seconds, shift(body_duration)),
             )
         )
+
+    # --- tool panels: the name, what it is, and the URL, when a project is first named.
+    # The only panel carrying something the viewer cannot get from the audio.
+    last_tool = -TOOL_MIN_GAP
+    spoken = [(seg.start, seg.end) for seg in kept]
+    for tool in meta.tools:
+        if not any(a <= tool.at < b for a, b in spoken):
+            # Named in a stretch that was cut. remap_to_final would pin it to the edge of
+            # the cut, putting the panel on screen at a moment the name is never spoken.
+            continue
+        start = shift(remap_to_final(tool.at, kept))
+        if start < shift(0.0) or start >= shift(body_duration) - TOOL_SECONDS:
+            continue  # named in a stretch that was cut, or too close to the end
+        if start - last_tool < TOOL_MIN_GAP:
+            # Alex names five projects in one breath at 6:23. Stacking five panels there
+            # would be a slideshow, not an annotation.
+            continue
+        overlays.append(
+            Overlay(
+                kind="tool",
+                values={"name": tool.name, "what": tool.what, "url": tool.url},
+                start=start,
+                end=min(start + TOOL_SECONDS, shift(body_duration)),
+            )
+        )
+        last_tool = start
 
     overlays = resolve_conflicts(overlays)
     return SlidePlan(
@@ -288,7 +350,8 @@ def describe(plan: SlidePlan, body_duration: float) -> str:
         events.append((card.start, f"┏━ {card.kind.upper():8s} {_mmss(card.start)} → "
                                    f"{_mmss(card.end)}   « {card.values.get('title','')} »"))
     for overlay in plan.overlays:
-        label = overlay.values.get("title") or overlay.values.get("label") or ""
+        label = (overlay.values.get("title") or overlay.values.get("label")
+                 or overlay.values.get("name") or "")
         if overlay.kind == "plan":
             label = " · ".join(overlay.values.get("chapters", []))[:60]
         events.append((

@@ -37,7 +37,6 @@ PROMPTS = Path(__file__).resolve().parent / "music_prompts"
 
 VIBE_INTRO = "Screencast Intro"
 VIBE_OUTRO = "Screencast Outro"
-VIBE_BED = "Screencast Bed"
 
 # The generator clamps anything outside this range, so asking for less is pointless.
 MIN_DURATION = 30
@@ -57,7 +56,6 @@ FADE_OUT = 1.2
 # A card plays alone and should sit where the voice sits. A bed plays under speech and is
 # placed well below it — 18 dB down is present without ever competing.
 CARD_LUFS_OFFSET = 0.0
-BED_LUFS_OFFSET = -18.0
 
 
 @dataclass(frozen=True)
@@ -149,9 +147,12 @@ def _merge(spans: list[tuple[float, float]]) -> list[tuple[float, float]]:
 
 
 def target_for(bed: Bed, tracks: dict[str, Path], speech_lufs: float) -> float:
-    """Where this bed should land, in LUFS."""
-    is_bed = bed.track == tracks.get("bed")
-    return speech_lufs + (BED_LUFS_OFFSET if is_bed else CARD_LUFS_OFFSET)
+    """Where this bed should land, in LUFS.
+
+    Every remaining bed plays under a card, where nobody is speaking, so they all target
+    the speech level itself: the music should feel as loud as the voice it replaces.
+    """
+    return speech_lufs + CARD_LUFS_OFFSET
 
 
 def with_gains(beds: list[Bed], tracks: dict[str, Path], speech_lufs: float, measure
@@ -170,12 +171,12 @@ def with_gains(beds: list[Bed], tracks: dict[str, Path], speech_lufs: float, mea
     return out
 
 
-def plan_beds(layout: SlidePlan, tracks: dict[str, Path], bed_duration: float,
+def plan_beds(layout: SlidePlan, tracks: dict[str, Path], bed_duration: float = 0.0,
               gains: dict[str, float] | None = None) -> list[Bed]:
-    """Where music plays, at what level, reading from which track.
+    """Where music plays: under the cards, and nowhere else.
 
-    Cards get their own track and read it from the start; overlays share the bed and walk
-    through it, so a video with ten overlays does not replay the same four bars ten times.
+    `bed_duration` is kept in the signature for callers that still pass it; there is no
+    bed any more.
     """
     gains = gains or {}
     beds: list[Bed] = []
@@ -190,19 +191,11 @@ def plan_beds(layout: SlidePlan, tracks: dict[str, Path], bed_duration: float,
                 source_offset=0.0, gain_db=gains.get(card.kind, 0.0))
         )
 
-    bed_track = tracks.get("bed")
-    if bed_track and layout.overlays:
-        cursor = 0.0
-        for start, end in _merge([(o.start, o.end) for o in layout.overlays]):
-            length = end - start
-            if cursor + length > bed_duration:
-                cursor = 0.0
-            beds.append(
-                Bed(start=start, end=end, track=bed_track,
-                    source_offset=cursor, gain_db=gains.get("bed", 0.0))
-            )
-            cursor += length
-
+    # No bed under the speech. It used to play at -18 LUFS below the voice, which Alex put
+    # plainly after watching two finished videos: the only music you notice is the intro,
+    # and that is because it is the only one not competing with a voice. Music nobody hears
+    # is not doing its job — and it cost a GPU generation per video. Silence under speech
+    # also makes the blocking moments land harder, which is the whole point of a jingle.
     return sorted(beds, key=lambda b: b.start)
 
 
@@ -248,12 +241,7 @@ def build_tracks(ep, layout: SlidePlan, intro_lyrics: str, outro_lyrics: str) ->
     if "outro" in kinds:
         tracks["outro"] = generate(ep, VIBE_OUTRO, MIN_DURATION,
                                    out_dir=root / "outro", prompts=prompts)
-    if layout.overlays:
-        # One bed long enough that consecutive overlays do not repeat the same bars.
-        wanted = int(sum(end - start for start, end in _merge(
-            [(o.start, o.end) for o in layout.overlays]
-        )))
-        tracks["bed"] = generate(ep, VIBE_BED, wanted, out_dir=root / "bed", prompts=prompts)
+    # No bed track: see plan_beds. One generation less per video, too.
     return tracks
 
 

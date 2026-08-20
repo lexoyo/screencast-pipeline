@@ -26,6 +26,19 @@ class Channel:
     handle: str = ""
     theme: str = "alexhoyau"
     programme_label: str = "Au programme"
+    kicker: str = ""
+    """The line above the title on the intro card — the channel's territory, not its name.
+
+    It is the most-read zone of the video, and the name is already carried by the handle on
+    every chapter band. Empty falls back to the name."""
+
+    cta: str = ""
+    """The single line on the outro card, identical across every video.
+
+    A property of the channel and not of the episode: a call to action rewritten each time
+    makes attribution impossible. No URL here — the clickable link belongs in the
+    description, where it can be tracked per video. Empty = no line at all."""
+
     logo: str = ""
     """Path to a logo image, relative to the channel file. Empty = no logo."""
 
