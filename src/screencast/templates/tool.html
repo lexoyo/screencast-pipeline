@@ -10,16 +10,14 @@
  * Above the subtitle lane like every other overlay: the lower fifth belongs to YouTube's
  * captions and the player controls. */
 .band {
-  /* Flush against the top, exactly where the chapter band sits. Alex: a band belongs at
-   * one edge or the other, never floating in the middle — and the bottom is not ours
-   * (YouTube's subtitles and the player controls live there). Sharing the position with
-   * the chapter band is safe rather than risky: resolve_conflicts allows one overlay on
-   * screen at a time, so the two can never meet. All the information furniture ends up in
-   * the same place, which is what makes it read as furniture.
+  /* Flush against the BOTTOM — Alex's call, after seeing both. It is where a broadcast
+   * lower third belongs and where the eye expects it, and the chapter band keeps the top,
+   * so the two never share an edge even though only one is ever on screen at a time.
    *
-   * Full width again: nothing sits in the top-right corner, the webcam inset is bottom
-   * right. */
-  position: absolute; left: 0; right: 0; top: 0;
+   * The known cost: YouTube draws its subtitles in this strip, and we ship .srt files, so
+   * a viewer with captions on will see them overlap for the three seconds a band is up.
+   * Weighed and accepted — three seconds against a band that reads as furniture. */
+  position: absolute; left: 0; right: 0; bottom: 0;
   display: flex; align-items: baseline; gap: 34px;
   background: var(--overlay-strong-bg);
   border-left: 14px solid var(--rule);

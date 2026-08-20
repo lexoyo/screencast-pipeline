@@ -321,3 +321,36 @@ def test_the_band_drops_the_scheme_from_the_url():
     layout = build(plan, plan.kept, channel=CHANNEL, intro_seconds=6.0)
     tool = next(o for o in layout.overlays if o.kind == "tool")
     assert tool.values["url"] == "fedoraproject.org"
+
+
+def test_the_identity_band_names_the_channel_in_the_opening_seconds():
+    # the intro card moved after the summary, so nothing named the channel for a minute
+    plan = _summary_plan()
+    layout = build(plan, plan.kept, channel={**CHANNEL, "kicker": "LOCAL, ENSEMBLE"},
+                   intro_seconds=6.0)
+    band = next(o for o in layout.overlays if o.kind == "identity")
+    assert band.start == 2.0
+    assert band.values["name"] == "Alex Hoyau"
+    assert band.values["handle"] == "@AlexHoyau"
+
+
+def test_the_identity_band_wins_over_a_tool_named_at_the_same_moment():
+    plan = _summary_plan(tools=[{"at": 3, "name": "Jan"}])
+    layout = build(plan, plan.kept, channel=CHANNEL, intro_seconds=6.0)
+    early = [o for o in layout.overlays if o.start < 8.0]
+    assert [o.kind for o in early] == ["identity"]
+
+
+def test_a_video_too_short_to_seat_it_gets_no_identity_band():
+    plan = _plan([{"start": 0.0, "end": 3.0, "drop": False, "scene": "large"}], {})
+    layout = build(plan, plan.kept, channel=CHANNEL)
+    assert not [o for o in layout.overlays if o.kind == "identity"]
+
+
+def test_a_band_squeezed_too_short_to_read_is_dropped_not_flashed():
+    # the identity band pushed a tool band down to 2 s: three pieces of text nobody can
+    # read in that time, and two bands in six seconds reads as flicker
+    plan = _summary_plan(tools=[{"at": 3, "name": "Jan", "what": "un LLM local",
+                                 "url": "https://jan.ai"}])
+    layout = build(plan, plan.kept, channel=CHANNEL, intro_seconds=6.0)
+    assert not [o for o in layout.overlays if o.kind == "tool" and o.duration < 2.5]

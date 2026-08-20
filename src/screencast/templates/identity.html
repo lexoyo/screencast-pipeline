@@ -1,0 +1,30 @@
+<!doctype html><meta charset="utf-8">
+<style>$theme</style>
+<style>$base</style>
+<style>
+/* Who is talking, in the opening seconds. The intro card now lands after the spoken
+ * summary, so for the first minute nothing on screen said whose channel this was — and
+ * the whole point of moving the card was to put content first, not identity nowhere.
+ *
+ * Same band as the tool one, deliberately: one shape for all the information furniture.
+ * The name takes the place of the tool name, the territory that of the description, the
+ * handle that of the URL. */
+.band {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  display: flex; align-items: baseline; gap: 34px;
+  background: var(--overlay-strong-bg);
+  border-left: 14px solid var(--rule);
+  padding: 24px 60px 24px 42px;
+}
+.name { font-size: 44px; font-weight: 400; color: var(--fg); letter-spacing: .04em;
+        white-space: nowrap; }
+.kicker { font-size: 36px; font-weight: 400; color: var(--muted); letter-spacing: .18em;
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.handle { font-size: 36px; font-weight: 400; color: var(--rule); white-space: nowrap;
+          margin-left: auto; padding-left: 24px; }
+</style>
+<div class="band">
+  <div class="name">$name</div>
+  <div class="kicker">$kicker</div>
+  <div class="handle">$handle</div>
+</div>

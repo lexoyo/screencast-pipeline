@@ -31,7 +31,7 @@ CHAPTER_OVERLAY = 3.0
 # of each other.
 # A tool panel sits below the others: it is useful, but a chapter or a list card marks a
 # structural moment, and two panels at once is one too many.
-OVERLAY_PRIORITY = {"plan": 4, "list": 3, "chapter": 2, "tool": 1}
+OVERLAY_PRIORITY = {"identity": 5, "plan": 4, "list": 3, "chapter": 2, "tool": 1}
 
 # A list card recalls a point announced earlier. Too soon after the programme panel and it
 # only repeats what is still fresh — the viewer read it seconds ago and now the speaker is
@@ -40,6 +40,10 @@ OVERLAY_PRIORITY = {"plan": 4, "list": 3, "chapter": 2, "tool": 1}
 LIST_CARD_MIN_GAP = 30.0
 TOOL_SECONDS = 3.5
 TOOL_MIN_GAP = 12.0
+# Not at 0:00: a caption over the very first frame reads as a title card. Broadcast waits
+# for the person to be talking, then names them.
+IDENTITY_AT = 2.0
+IDENTITY_SECONDS = 4.5
 
 # A chapter band right after the intro card, or right after the programme panel, says again
 # what was just said. Both were observed on the first real take: chapter one landed four
@@ -258,6 +262,24 @@ def build(
             )
         )
 
+    # --- identity band: who is talking, in the opening seconds.
+    # The intro card moved after the spoken summary, so for the first minute nothing said
+    # whose channel this was. Putting content first was the point; leaving identity
+    # nowhere was not.
+    if channel.get("name") and body_duration > IDENTITY_AT + IDENTITY_SECONDS:
+        overlays.append(
+            Overlay(
+                kind="identity",
+                values={
+                    "name": channel.get("name", ""),
+                    "kicker": channel.get("kicker", ""),
+                    "handle": channel.get("handle", ""),
+                },
+                start=shift(IDENTITY_AT),
+                end=shift(IDENTITY_AT + IDENTITY_SECONDS),
+            )
+        )
+
     # --- tool panels: the name, what it is, and the URL, when a project is first named.
     # The only panel carrying something the viewer cannot get from the audio.
     last_tool = -TOOL_MIN_GAP
@@ -293,6 +315,15 @@ def build(
     )
 
 
+# A band carries three pieces of text to read; a chapter title is one line seen in a
+# glance. Squeezed below this it flashes rather than informs, and is dropped instead.
+READABLE = {"tool": 2.5, "identity": 2.5}
+
+
+def _readable(kind: str) -> float:
+    return READABLE.get(kind, 1.0)
+
+
 def resolve_conflicts(overlays: list[Overlay]) -> list[Overlay]:
     """Keep one overlay on screen at a time, highest priority first.
 
@@ -310,7 +341,7 @@ def resolve_conflicts(overlays: list[Overlay]) -> list[Overlay]:
                     start = existing.end          # push it after the one already there
                 else:
                     end = existing.start          # or stop it before
-        if end - start >= 1.0:
+        if end - start >= _readable(candidate.kind):
             kept.append(Overlay(candidate.kind, candidate.values, start, end))
     return sorted(kept, key=lambda o: o.start)
 
