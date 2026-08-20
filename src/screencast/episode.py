@@ -12,6 +12,8 @@ from pathlib import Path
 
 from .config import Config
 
+CONTAINERS = (".mkv", ".mp4", ".mov", ".webm")
+
 
 class MissingInput(Exception):
     """A file a stage needs isn't there — usually an earlier stage that never ran."""
@@ -24,14 +26,28 @@ class Episode:
     root: Path
     cfg: Config
 
-    # ---- inputs (symlinked next to the rushes by nouvelle-video.sh)
+    # ---- inputs (symlinked next to the rushes when the episode is created)
+    def _rush(self, configured: str, stem: str) -> Path:
+        """Find a rush by stem, whatever container OBS was set to.
+
+        The episode folder holds exactly one screen.* and one face.*, so the extension is
+        discoverable and must never have to be repeated on the command line. It used to:
+        a run would stop dead on "missing input: face.mkv" when the file was face.mp4, and
+        the configured name only ever held a default nobody had reason to keep current.
+        """
+        exact = self.root / configured
+        if exact.exists():
+            return exact
+        found = sorted(p for p in self.root.glob(f"{stem}.*") if p.suffix.lower() in CONTAINERS)
+        return found[0] if found else exact
+
     @property
     def screen(self) -> Path:
-        return self.root / self.cfg.screen_file
+        return self._rush(self.cfg.screen_file, "screen")
 
     @property
     def face(self) -> Path:
-        return self.root / self.cfg.face_file
+        return self._rush(self.cfg.face_file, "face")
 
     @property
     def mic(self) -> Path:
