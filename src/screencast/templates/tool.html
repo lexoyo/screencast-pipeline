@@ -2,25 +2,42 @@
 <style>$theme</style>
 <style>$base</style>
 <style>
-/* The only panel that tells the viewer something they do not already have. The others
- * repeat what was just said or what YouTube already shows above the seek bar; this one
- * carries a URL, and a URL cannot be heard. Saying "browser MCP" out loud leaves nobody
- * able to spell it or find it.
+/* A broadcast-style band, not a panel. The first version was a block with three stacked
+ * lines that took a quarter of the frame — Alex: "trop intrusif, ça ne fait pas assez
+ * habillage TV". Information furniture should read in one glance and give the picture
+ * back: one line, one height, the accent rail on the left doing the branding.
  *
- * Sits above the subtitle lane, like everything else — the brand sheet keeps the lower
- * fifth for YouTube's captions and the player controls. */
-.tool {
-  position: absolute; left: 130px; bottom: 300px;
+ * Above the subtitle lane like every other overlay: the lower fifth belongs to YouTube's
+ * captions and the player controls. */
+.band {
+  /* Flush against the top, exactly where the chapter band sits. Alex: a band belongs at
+   * one edge or the other, never floating in the middle — and the bottom is not ours
+   * (YouTube's subtitles and the player controls live there). Sharing the position with
+   * the chapter band is safe rather than risky: resolve_conflicts allows one overlay on
+   * screen at a time, so the two can never meet. All the information furniture ends up in
+   * the same place, which is what makes it read as furniture.
+   *
+   * Full width again: nothing sits in the top-right corner, the webcam inset is bottom
+   * right. */
+  position: absolute; left: 0; right: 0; top: 0;
+  display: flex; align-items: baseline; gap: 34px;
   background: var(--overlay-strong-bg);
   border-left: 14px solid var(--rule);
-  padding: 32px 52px; max-width: 1100px;
+  padding: 24px 60px 24px 42px;
 }
-.name { font-size: 64px; font-weight: 300; color: var(--fg); line-height: 1.05; }
-.what { font-size: 44px; font-weight: 400; color: var(--muted); margin-top: 14px; }
-.url  { font-size: 40px; font-weight: 400; color: var(--rule); margin-top: 18px;
-        letter-spacing: .04em; }
+.name { font-size: 44px; font-weight: 400; color: var(--fg); letter-spacing: .04em;
+        white-space: nowrap; }
+/* One line, always. A band that wraps stops being furniture and becomes a panel again —
+ * which is exactly what this replaced. An over-long description is cut rather than
+ * allowed to grow the band: the name and the URL are what must survive. */
+.what { font-size: 36px; font-weight: 400; color: var(--muted);
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+/* The URL is the reason this band exists — a URL cannot be heard — so it keeps the accent
+ * colour and sits at the end, where the eye lands last. */
+.url  { font-size: 36px; font-weight: 400; color: var(--rule); white-space: nowrap;
+        margin-left: auto; padding-left: 24px; }
 </style>
-<div class="tool">
+<div class="band">
   <div class="name">$name</div>
   <div class="what">$what</div>
   <div class="url">$url</div>
