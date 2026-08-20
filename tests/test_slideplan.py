@@ -354,3 +354,19 @@ def test_a_band_squeezed_too_short_to_read_is_dropped_not_flashed():
                                  "url": "https://jan.ai"}])
     layout = build(plan, plan.kept, channel=CHANNEL, intro_seconds=6.0)
     assert not [o for o in layout.overlays if o.kind == "tool" and o.duration < 2.5]
+
+
+def test_the_last_word_belongs_to_the_channel_not_to_the_episode():
+    # the model wrote "Des LLM en local" on a video about Jan — a fine episode summary and
+    # a poor last word, on a channel about to cover web design and WordPress too
+    plan = _plan(BODY, {"outro": {"title": "Des LLM en local", "subtitle": "..."}})
+    layout = build(plan, plan.kept, channel={**CHANNEL, "outro_title": "Ma promesse"})
+    outro = next(c for c in layout.cards if c.kind == "outro")
+    assert outro.values["title"] == "Ma promesse"
+
+
+def test_without_a_channel_line_the_episode_keeps_the_last_word():
+    plan = _plan(BODY, {"outro": {"title": "Des LLM en local", "subtitle": "..."}})
+    layout = build(plan, plan.kept, channel=CHANNEL)
+    outro = next(c for c in layout.cards if c.kind == "outro")
+    assert outro.values["title"] == "Des LLM en local"

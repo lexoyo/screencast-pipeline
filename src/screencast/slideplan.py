@@ -174,7 +174,7 @@ def build(
             Card(
                 kind="outro",
                 values={
-                    "title": meta.outro.title,
+                    "title": channel.get("outro_title") or meta.outro.title,
                     # A property of the channel, not of the episode. Letting the model
                     # write it produced a different call to action every video — which
                     # makes attribution impossible, and produced "écrivez-moi" with no

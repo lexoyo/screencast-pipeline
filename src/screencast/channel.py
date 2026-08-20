@@ -32,6 +32,14 @@ class Channel:
     It is the most-read zone of the video, and the name is already carried by the handle on
     every chapter band. Empty falls back to the name."""
 
+    outro_title: str = ""
+    """The last line of the video — the channel's promise, not the episode's subject.
+
+    The model used to write it from the episode, which gave "Des LLM en local" on a video
+    about Jan: a fine summary and a poor last word, since the closing frame is what a
+    viewer carries away about the CHANNEL. Alex is about to publish on web design, Silex
+    and WordPress too. Empty falls back to whatever the episode proposed."""
+
     cta: str = ""
     """The single line on the outro card, identical across every video.
 

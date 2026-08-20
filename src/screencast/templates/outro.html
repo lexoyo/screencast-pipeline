@@ -7,7 +7,11 @@
 .full { display: flex; flex-direction: column; justify-content: center; padding: 0 190px;
         position: relative; }
 .accent { position: absolute; left: 0; top: 0; bottom: 0; width: 20px; background: var(--rule); }
-h1 { font-size: 96px; font-weight: 200; color: var(--fg); line-height: 1.06; max-width: 1400px; }
+/* One line, always. The closing line is a signature, and a signature that wraps stops
+ * looking like one. The size gives way before the line breaks — 200 is a display weight,
+ * it holds perfectly well at 72 px, and the floor is 40. */
+h1 { font-size: 72px; font-weight: 200; color: var(--fg); line-height: 1.06;
+     max-width: 1640px; white-space: nowrap; }
 .cta { font-size: 52px; font-weight: 400; color: var(--muted); margin-top: 44px; }
 .handle { position: absolute; right: 190px; bottom: 120px;
           font-size: 40px; font-weight: 400; color: var(--muted); letter-spacing: .06em; }
