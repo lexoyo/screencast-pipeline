@@ -125,7 +125,11 @@ def run_stage(name: str, ep: Episode) -> None:
         plan = _plan(ep)
         shotcut.run(ep, plan, slideplan.build(plan, plan.kept, channel=CHANNEL.as_values()))
     elif name == "subtitles":
-        subtitles.run_stage(ep, PROMPTS)
+        try:
+            title = timeline.load(ep.edl).metadata.title
+        except TimelineError:
+            title = ""
+        subtitles.run_stage(ep, PROMPTS, title)
     elif name == "publish":
         publish.run(ep, _plan(ep))
     else:

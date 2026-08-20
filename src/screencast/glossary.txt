@@ -29,3 +29,12 @@ LLM = L L M, èl èl èm
 GPU
 VRAM = V RAM
 MKV = M K V, em ka vé
+Flathub = Flat hub
+OpenRouter = Open Router
+Qwen = Couen, Qwenn
+Anthropic = Antropique
+
+# Not proper nouns, but words whisper mangles on this channel anyway.
+ordi = ARDI, hardi
+prompt = prompte
+prompter = prompté

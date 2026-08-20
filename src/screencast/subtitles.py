@@ -7,15 +7,17 @@ Whisper listening to the finished video simply gets it right.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
+from . import transcript as transcript_mod
 from .episode import Episode
 from .parsing import clean_srt
 from .shell import ffmpeg, log, run
 from .transcribe import whisper_json
 
 
-def run_stage(ep: Episode, prompts_dir: Path) -> None:
+def run_stage(ep: Episode, prompts_dir: Path, title: str = "") -> None:
     cfg = ep.cfg
     ep.need(ep.draft, "run the draft stage first")
     ep.subs_dir.mkdir(parents=True, exist_ok=True)
@@ -47,3 +49,12 @@ def run_stage(ep: Episode, prompts_dir: Path) -> None:
     (ep.work / "tr_raw.srt").write_text(proc.stdout)
     (ep.subs_dir / f"{target}.srt").write_text(clean_srt(proc.stdout))
     log(f"subs -> subs/{source_lang}.srt + subs/{target}.srt")
+
+    # The readable document is built from the FINISHED subtitles, so its timestamps match
+    # the published video rather than the rush.
+    try:
+        data = transcript_mod.build(ep, prompts_dir, title=title, language=source_lang)
+        transcript_mod.write(ep, data, source_lang)
+        (ep.work / "links.json").write_text(json.dumps(data.get("links") or [], indent=2))
+    except Exception as exc:  # noqa: BLE001 — a missing document must not cost the render
+        log(f"⚠ transcript skipped: {exc}")

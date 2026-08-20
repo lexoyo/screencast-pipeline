@@ -7,10 +7,14 @@ where everything is ready and named so nothing has to be hunted for.
 
 from __future__ import annotations
 
+import json
+
+from . import upload
 from .episode import Episode
 from .shell import log
 from .timecode import remap_to_final, youtube_timecode
 from .timeline import Edl, load_kept
+from .transcript import links_section
 
 
 def chapter_rows(plan: Edl, kept: list[dict]) -> list[tuple[float, str]]:
@@ -27,17 +31,13 @@ def chapter_rows(plan: Edl, kept: list[dict]) -> list[tuple[float, str]]:
     return rows
 
 
-def metadata_text(plan: Edl, rows: list[tuple[float, str]]) -> str:
+def metadata_text(plan: Edl, rows: list[tuple[float, str]], links: list[dict] | None = None) -> str:
     meta = plan.metadata
-    lines = [
-        meta.title,
-        "",
-        meta.description,
-        "",
-        "Tags: " + ", ".join(meta.tags),
-        "",
-        "Chapters:",
-    ]
+    lines = [meta.title, "", meta.description, ""]
+    block = links_section(links or [])
+    if block:
+        lines += [block, ""]
+    lines += ["Tags: " + ", ".join(meta.tags), "", "Chapters:"]
     lines += [f"{youtube_timecode(at)} {label}" for at, label in rows]
     return "\n".join(lines) + "\n"
 
@@ -49,7 +49,12 @@ def run(ep: Episode, plan: Edl) -> None:
     deliverable.mkdir(parents=True, exist_ok=True)
 
     rows = chapter_rows(plan, kept)
-    (deliverable / "metadata.txt").write_text(metadata_text(plan, rows))
+    links_file = ep.work / "links.json"
+    links = json.loads(links_file.read_text()) if links_file.is_file() else []
+    (deliverable / "metadata.txt").write_text(metadata_text(plan, rows, links))
+
+    for document in sorted(ep.deliverable.glob("transcript.*.md")):
+        document.touch()  # already written by the subtitles stage; kept in the deliverable
 
     (deliverable / "final.mp4").write_bytes(ep.draft.read_bytes())
 
@@ -65,10 +70,21 @@ def run(ep: Episode, plan: Edl) -> None:
     if ep.project.is_file():
         (deliverable / "project.mlt").write_text(ep.project.read_text())
 
+    (deliverable / "UPLOAD.md").write_text(
+        upload.build(
+            deliverable,
+            title=plan.metadata.title,
+            chapters=[(youtube_timecode(at), label) for at, label in rows],
+            language=plan.language,
+        )
+    )
+
     log("-" * 65)
     log(f"LIVRABLE: {deliverable}")
     log("  final.mp4      vidéo montée HD")
     log("  final.*.srt    sous-titres (natif + traduction) — chargés seuls par VLC/mpv")
     log("  metadata.txt   titre / description / tags / chapitres")
     log("  project.mlt    projet Shotcut éditable (pointe vers les rushes du dossier parent)")
+    log("  transcript.md  le transcript rédigé, avec les liens")
+    log("  UPLOAD.md      la marche à suivre pour publier, pas à pas")
     log("Aucun upload — tu publies à la main. QC metadata par subagent (règle #2).")
