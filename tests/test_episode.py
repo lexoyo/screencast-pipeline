@@ -1,6 +1,5 @@
 """Locating the rushes inside an episode folder."""
 
-from pathlib import Path
 
 from screencast.config import load
 from screencast.episode import Episode

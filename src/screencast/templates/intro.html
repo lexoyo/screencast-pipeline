@@ -1,0 +1,22 @@
+<!doctype html><meta charset="utf-8">
+<style>$theme</style>
+<style>$base</style>
+<style>
+/* Full frame, opaque: the intro is a real beat with music under it, not an overlay. It
+ * carries the title of the video — which is not the YouTube title: that one has to hold a
+ * keyword, this one has to be read in two seconds. */
+.full { display: flex; flex-direction: column; justify-content: center; padding: 0 190px;
+        position: relative; }
+.accent { position: absolute; left: 0; top: 0; bottom: 0; width: 20px; background: var(--rule); }
+.kicker { font-size: 34px; font-weight: 700; letter-spacing: .22em;
+          text-transform: uppercase; color: var(--muted); margin-bottom: 40px; }
+h1 { font-size: 116px; font-weight: 700; color: var(--fg); line-height: 1.03;
+     letter-spacing: -.015em; max-width: 1420px; }
+.subtitle { font-size: 44px; font-weight: 400; color: var(--muted); margin-top: 36px; }
+</style>
+<div class="full">
+  <div class="accent"></div>
+  <div class="kicker">$kicker</div>
+  <h1>$title</h1>
+  <div class="subtitle">$subtitle</div>
+</div>

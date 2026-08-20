@@ -1,0 +1,25 @@
+<!doctype html><meta charset="utf-8">
+<style>$theme</style>
+<style>$base</style>
+<style>
+/* The programme, shown while it is being announced out loud. It stays for as long as that
+ * sentence lasts — so it is sized to be read in a single pass, not studied. */
+.panel {
+  position: absolute; left: 130px; bottom: 120px;
+  padding: 54px 90px 58px 76px;
+  background: var(--overlay-bg);
+  border-left: 14px solid var(--rule);
+  max-width: 1400px;
+}
+.kicker { font-size: 30px; font-weight: 700; letter-spacing: .2em;
+          text-transform: uppercase; color: var(--muted); margin-bottom: 34px; }
+ul { list-style: none; display: flex; flex-direction: column; gap: 26px; }
+li { display: flex; align-items: baseline; gap: 30px;
+     font-size: 50px; font-weight: 500; color: var(--fg); }
+li .n { font-size: 30px; font-weight: 700; color: var(--muted);
+        letter-spacing: .1em; min-width: 54px; }
+</style>
+<div class="panel">
+  <div class="kicker">$kicker</div>
+  <ul>$items</ul>
+</div>

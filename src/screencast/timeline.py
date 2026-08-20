@@ -46,11 +46,33 @@ class Chapter:
 
 
 @dataclass(frozen=True)
+class Bookend:
+    """The intro or outro card: a real segment, with music, that lengthens the video.
+
+    Optional on purpose. A take with no title worth showing should not get an empty card,
+    and the model is told to omit it rather than invent one.
+    """
+
+    title: str
+    subtitle: str = ""
+
+    @classmethod
+    def parse(cls, data: Any) -> Bookend | None:
+        if not isinstance(data, dict):
+            return None
+        title = str(data.get("title", "")).strip()
+        subtitle = str(data.get("subtitle") or data.get("cta") or "").strip()
+        return cls(title=title, subtitle=subtitle) if title else None
+
+
+@dataclass(frozen=True)
 class Metadata:
     title: str = ""
     description: str = ""
     tags: list[str] = field(default_factory=list)
     chapters: list[Chapter] = field(default_factory=list)
+    intro: Bookend | None = None
+    outro: Bookend | None = None
 
 
 @dataclass(frozen=True)
@@ -63,6 +85,12 @@ class Span:
     scene: str
     reason: str = ""
     list_item: ListItem | None = None
+    plan: bool = False
+    """True on the segment where the speaker announces the programme out loud.
+
+    The programme overlay lasts exactly as long as that sentence — it accompanies what is
+    being said instead of imposing itself, which is why nothing is shown at all when the
+    speaker never announces one."""
 
     @property
     def duration(self) -> float:
@@ -78,6 +106,7 @@ class KeptSegment:
     scene: str
     final_start: float
     list_item: ListItem | None = None
+    plan: bool = False
 
     @property
     def duration(self) -> float:
@@ -96,6 +125,7 @@ class KeptSegment:
             "list_item": (
                 {"n": self.list_item.n, "label": self.list_item.label} if self.list_item else None
             ),
+            "plan": self.plan,
             "final_start": self.final_start,
             "final_end": self.final_end,
         }
@@ -122,6 +152,7 @@ class Edl:
                     scene=span.scene,
                     final_start=cursor,
                     list_item=span.list_item,
+                    plan=span.plan,
                 )
             )
             cursor += span.duration
@@ -150,6 +181,8 @@ def parse(data: dict[str, Any]) -> Edl:
         description=str(meta_raw.get("description", "")),
         tags=[str(t) for t in meta_raw.get("tags") or []],
         chapters=sorted(chapters, key=lambda c: c.at),
+        intro=Bookend.parse(meta_raw.get("intro")),
+        outro=Bookend.parse(meta_raw.get("outro")),
     )
     timeline = [
         Span(
@@ -159,6 +192,7 @@ def parse(data: dict[str, Any]) -> Edl:
             scene=_normalize_scene(item.get("scene")),
             reason=str(item.get("reason", "")),
             list_item=ListItem.parse(item.get("list_item")),
+            plan=bool(item.get("plan", False)),
         )
         for item in data.get("timeline") or []
         if "start" in item and "end" in item
@@ -182,7 +216,18 @@ def write_kept(path: Path, kept: list[KeptSegment]) -> None:
     path.write_text(json.dumps([k.as_dict() for k in kept], indent=2))
 
 
-def load_kept(path: Path) -> list[dict[str, Any]]:
+def load_kept(path: Path) -> list[KeptSegment]:
+    """Read back what the render stage computed, as the same type it wrote."""
     if not path.is_file():
-        raise TimelineError(f"{path} not found — run the draft stage first")
-    return json.loads(path.read_text())
+        raise TimelineError(f"{path} not found — run the render stage first")
+    return [
+        KeptSegment(
+            start=row["start"],
+            end=row["end"],
+            scene=row.get("scene", "large"),
+            final_start=row["final_start"],
+            list_item=ListItem.parse(row.get("list_item")),
+            plan=bool(row.get("plan", False)),
+        )
+        for row in json.loads(path.read_text())
+    ]

@@ -1,0 +1,20 @@
+<!doctype html><meta charset="utf-8">
+<style>$theme</style>
+<style>$base</style>
+<style>
+/* The closing beat. One thing to do, not four — a viewer who reached the end will act on
+ * a single clear ask, and on nothing at all if given a list. */
+.full { display: flex; flex-direction: column; justify-content: center; padding: 0 190px;
+        position: relative; }
+.accent { position: absolute; left: 0; top: 0; bottom: 0; width: 20px; background: var(--rule); }
+h1 { font-size: 96px; font-weight: 700; color: var(--fg); line-height: 1.06; max-width: 1400px; }
+.cta { font-size: 52px; font-weight: 500; color: var(--muted); margin-top: 44px; }
+.handle { position: absolute; right: 190px; bottom: 120px;
+          font-size: 36px; font-weight: 600; color: var(--muted); letter-spacing: .04em; }
+</style>
+<div class="full">
+  <div class="accent"></div>
+  <h1>$title</h1>
+  <div class="cta">$cta</div>
+  <div class="handle">$handle</div>
+</div>

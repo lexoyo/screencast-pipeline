@@ -1,0 +1,13 @@
+/* Shared by every slide. Loaded before the per-template rules.
+ *
+ * Note the transparent body: overlays are composited over the picture by ffmpeg, so the
+ * PNG must carry an alpha channel. Templates that are meant to be full-frame (intro,
+ * outro) paint their own background over it. */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body {
+  width: 1920px; height: 1080px;
+  background: transparent;
+  font-family: var(--font);
+  -webkit-font-smoothing: antialiased;
+}
+.full { background: var(--bg); width: 100%; height: 100%; }

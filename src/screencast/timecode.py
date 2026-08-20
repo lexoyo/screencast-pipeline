@@ -39,7 +39,7 @@ def youtube_timecode(seconds: float) -> str:
     return f"{minutes}:{secs:02d}"
 
 
-def remap_to_final(at: float, kept: Sequence[dict[str, Any]]) -> float:
+def remap_to_final(at: float, kept: Sequence[Any]) -> float:
     """Project a source timestamp onto the edited timeline.
 
     `kept` holds the segments that survived the cut, each carrying its source span
@@ -54,9 +54,9 @@ def remap_to_final(at: float, kept: Sequence[dict[str, Any]]) -> float:
     if not kept:
         return 0.0
     for seg in kept:
-        if seg["start"] <= at < seg["end"]:
-            return seg["final_start"] + (at - seg["start"])
-    later = [seg for seg in kept if seg["start"] >= at]
+        if seg.start <= at < seg.end:
+            return seg.final_start + (at - seg.start)
+    later = [seg for seg in kept if seg.start >= at]
     if later:
-        return later[0]["final_start"]
-    return kept[-1]["final_end"]
+        return later[0].final_start
+    return kept[-1].final_end

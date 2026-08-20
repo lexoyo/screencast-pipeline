@@ -1,0 +1,20 @@
+<!doctype html><meta charset="utf-8">
+<style>$theme</style>
+<style>$base</style>
+<style>
+/* A spoken enumeration point. Louder than a chapter overlay on purpose: this IS the
+ * subject of the moment, where a chapter title is only a signpost. The picture behind it
+ * is blurred and dimmed by ffmpeg, not here — a CSS backdrop-filter cannot reach it. */
+.card { position: absolute; inset: 0; display: flex; flex-direction: column;
+        align-items: center; justify-content: center; gap: 40px; }
+.number { font-size: 210px; font-weight: 700; color: var(--fg); line-height: 1;
+          letter-spacing: -.02em; }
+.label { font-size: 76px; font-weight: 500; color: var(--fg); text-align: center;
+         max-width: 1300px; line-height: 1.15; }
+.rule { width: 180px; height: 8px; background: var(--rule); }
+</style>
+<div class="card">
+  <div class="number">$number</div>
+  <div class="rule"></div>
+  <div class="label">$label</div>
+</div>

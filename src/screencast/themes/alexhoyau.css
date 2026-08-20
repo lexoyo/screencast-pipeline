@@ -1,0 +1,25 @@
+/* @AlexHoyau — the channel palette, from leads-agent/data/charte.md.
+ *
+ * Dark on purpose: the channel lives inside the YouTube interface, and a white panel is a
+ * glaring slab for everyone in dark mode — that is, most developers. The navy holds up in
+ * both themes, where a #1c1c1c would vanish into YouTube's own #0f0f0f.
+ *
+ * Colours are not invented here. A first version used a house palette and the verdict was
+ * "these colours are really ugly, do we have a brand sheet?" — we did, and it predated the
+ * attempt. Read the brand sheet before making anything visual. */
+
+:root {
+  --bg: #0d1b2a;          /* panels, and the bar behind overlay text */
+  --fg: #ffffff;          /* titles */
+  --muted: #9db4c8;       /* numbers, kickers, secondary lines */
+  --rule: #4a7291;        /* accent rules and separators */
+
+  /* Same stack as the site. No web fonts: a slide must render identically in two years
+     with no network, and a missing font would silently reflow every title. */
+  --font: "Helvetica Neue", Helvetica, "Liberation Sans", Arial, sans-serif;
+
+  /* Overlay bars sit over the speaker's face, so they are translucent enough to keep the
+     person visible and opaque enough to keep the text legible over a bright kitchen. */
+  --overlay-bg: rgba(13, 27, 42, 0.82);
+  --overlay-strong-bg: rgba(13, 27, 42, 0.93);
+}

@@ -3,6 +3,7 @@
 import pytest
 
 from screencast.timecode import mlt_timecode, remap_to_final, srt_timecode, youtube_timecode
+from screencast.timeline import KeptSegment
 
 
 def test_mlt_timecode_pads_every_field():
@@ -37,8 +38,8 @@ def test_youtube_timecode_keeps_the_hour_past_one():
 def kept():
     """Two surviving segments: source 0-10 and 20-30, laid end to end in the cut."""
     return [
-        {"start": 0.0, "end": 10.0, "final_start": 0.0, "final_end": 10.0},
-        {"start": 20.0, "end": 30.0, "final_start": 10.0, "final_end": 20.0},
+        KeptSegment(start=0.0, end=10.0, scene="large", final_start=0.0),
+        KeptSegment(start=20.0, end=30.0, scene="large", final_start=10.0),
     ]
 
 
