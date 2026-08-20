@@ -119,9 +119,11 @@ def run_stage(name: str, ep: Episode) -> None:
     elif name == "montage":
         montage.run_stage(ep, PROMPTS)
     elif name == "render":
-        render.run(ep, _plan(ep))
+        plan = _plan(ep)
+        render.run(ep, plan, slideplan.build(plan, plan.kept, channel=CHANNEL))
     elif name == "shotcut":
-        shotcut.run(ep, _plan(ep))
+        plan = _plan(ep)
+        shotcut.run(ep, plan, slideplan.build(plan, plan.kept, channel=CHANNEL))
     elif name == "subtitles":
         subtitles.run_stage(ep, PROMPTS)
     elif name == "publish":

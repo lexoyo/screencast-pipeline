@@ -7,8 +7,11 @@ shot once, the close-up once, for the whole project.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from .episode import Episode
 from .shell import ffprobe_duration, log
+from .slideplan import SlidePlan
 from .sync import camera_offset
 from .timecode import mlt_timecode as tc
 from .timeline import Edl
@@ -29,7 +32,40 @@ def _size_position(rect: str) -> str:
     )
 
 
-def build(ep: Episode, plan: Edl) -> str:
+def _slide_producers(images: list[Path]) -> str:
+    """One producer per slide image.
+
+    `qimage` is MLT's still-image service and it honours the alpha channel, which is what
+    lets an overlay sit on top of the picture in Shotcut exactly as it does in the export.
+    This is the whole reason the slides are PNGs rather than an ffmpeg drawtext: a filter
+    cannot be imported into a project, an image can.
+    """
+    return "\n".join(
+        f'  <producer id="slide{index}" out="{tc(3600)}">'
+        f'<property name="length">{tc(3600)}</property>'
+        f'<property name="resource">{image}</property>'
+        f'<property name="mlt_service">qimage</property></producer>'
+        for index, image in enumerate(images)
+    )
+
+
+def _slide_track(entries: list[tuple[int, float, float]]) -> list[str]:
+    """Lay slides on their own track, separated by blanks.
+
+    Entries are (producer index, start, end) in FINAL seconds — the same numbers the
+    renderer used, so the project and the export agree.
+    """
+    rows: list[str] = []
+    cursor = 0.0
+    for index, start, end in sorted(entries, key=lambda e: e[1]):
+        if start > cursor:
+            rows.append(_blank(start - cursor))
+        rows.append(f'    <entry producer="slide{index}" in="{tc(0)}" out="{tc(end - start)}"/>')
+        cursor = end
+    return rows
+
+
+def build(ep: Episode, plan: Edl, layout: SlidePlan | None = None) -> str:
     cfg = ep.cfg
     kept = plan.kept
     screen = ep.screen.resolve()
@@ -53,6 +89,14 @@ def build(ep: Episode, plan: Edl) -> str:
     track_large: list[str] = []
     track_serre: list[str] = []
     track_audio: list[str] = []
+
+    # An intro card pushes the body back. In the project that is a leading blank on every
+    # existing track, so the body sits where the export puts it.
+    body_offset = layout.body_offset if layout else 0.0
+    if body_offset > 0:
+        for track in (track_ecran, track_large, track_serre, track_audio):
+            track.append(_blank(body_offset))
+
     for seg in kept:
         cam_start = max(0.0, seg.start - offset)
         cam_end = seg.end - offset
@@ -65,6 +109,36 @@ def build(ep: Episode, plan: Edl) -> str:
         track_large.extend(face_clip if seg.scene == "large" else [_blank(seg.duration)])
         track_serre.extend(face_clip if seg.scene == "serre" else [_blank(seg.duration)])
         track_audio.append(_entry("screen_a", seg.start, seg.end))
+
+    # --- slides: cards and overlays share one track, in final-timeline order
+    slide_images: list[Path] = []
+    slide_entries: list[tuple[int, float, float]] = []
+    if layout:
+        from . import compose
+
+        cards, overlays = compose.render_all(ep, layout)
+        for image, card in zip(cards, layout.cards, strict=True):
+            slide_entries.append((len(slide_images), card.start, card.end))
+            slide_images.append(image)
+        for image, overlay in zip(overlays, layout.overlays, strict=True):
+            slide_entries.append((len(slide_images), overlay.start, overlay.end))
+            slide_images.append(image)
+
+    track_slides = _slide_track(slide_entries)
+    slide_producers = _slide_producers(slide_images)
+    slides_playlist = (
+        f'  <playlist id="track_slides">\n{chr(10).join(track_slides)}\n  </playlist>'
+        if track_slides
+        else ""
+    )
+    slides_track_ref = '    <track producer="track_slides"/>' if track_slides else ""
+    slides_transition = (
+        '    <transition mlt_service="frei0r.cairoblend">'
+        '<property name="a_track">0</property><property name="b_track">4</property>'
+        "</transition>"
+        if track_slides
+        else ""
+    )
 
     nl = "\n"
     return f"""<?xml version="1.0" encoding="utf-8"?>
@@ -87,27 +161,31 @@ def build(ep: Episode, plan: Edl) -> str:
 {nl.join(track_serre)}
     {_size_position(zoom_rect)}
   </playlist>
+{slide_producers}
   <playlist id="track_audio">
 {nl.join(track_audio)}
   </playlist>
+{slides_playlist}
   <tractor id="main">
     <track producer="black"/>
     <track producer="track_ecran"/>
     <track producer="track_large"/>
     <track producer="track_serre"/>
+{slides_track_ref}
     <track producer="track_audio" hide="video"/>
     <transition mlt_service="frei0r.cairoblend"><property name="a_track">0</property><property name="b_track">1</property></transition>
     <transition mlt_service="frei0r.cairoblend"><property name="a_track">0</property><property name="b_track">2</property></transition>
     <transition mlt_service="frei0r.cairoblend"><property name="a_track">0</property><property name="b_track">3</property></transition>
-    <transition mlt_service="mix"><property name="a_track">0</property><property name="b_track">4</property><property name="always_active">1</property><property name="sum">1</property></transition>
+{slides_transition}
+    <transition mlt_service="mix"><property name="a_track">0</property><property name="b_track">{5 if track_slides else 4}</property><property name="always_active">1</property><property name="sum">1</property></transition>
   </tractor>
 </mlt>
 """
 
 
-def run(ep: Episode, plan: Edl) -> None:
+def run(ep: Episode, plan: Edl, layout: SlidePlan | None = None) -> None:
     log("emit Shotcut project")
-    ep.project.write_text(build(ep, plan))
+    ep.project.write_text(build(ep, plan, layout))
     log(f"project -> {ep.project}")
     log("  3 video tracks: ecran / large / serre (+ mic). Reframe once per track head")
     log("  with the 'Size Position Rotate' filter — serre already carries the zoom.")

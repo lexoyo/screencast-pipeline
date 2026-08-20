@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import json
 
+from . import compose
 from .episode import Episode
 from .layout import escape_filter_path, wrap
 from .shell import ffmpeg, log
+from .slideplan import SlidePlan
 from .sync import camera_offset
 from .timeline import Edl, KeptSegment, ListItem
 
@@ -83,7 +85,7 @@ def _segment_graph(ep: Episode, seg: KeptSegment, index: int, params: dict, offs
     return f"{video};{audio}"
 
 
-def run(ep: Episode, plan: Edl) -> None:
+def run(ep: Episode, plan: Edl, layout: SlidePlan | None = None) -> None:
     cfg = ep.cfg
     ep.need(ep.screen, "the screen rush")
     ep.need(ep.face, "the clean webcam rush")
@@ -134,20 +136,26 @@ def run(ep: Episode, plan: Edl) -> None:
         )
         parts.append(f"file '{out.as_posix()}'")
 
+    # Cards bracket the body: intro first, outro last. They are segments like any other,
+    # which is why they lengthen the video where an overlay does not.
+    if layout:
+        ep.slidedir.mkdir(parents=True, exist_ok=True)
+        intro = [c for c in layout.cards if c.kind == "intro"]
+        outro = [c for c in layout.cards if c.kind != "intro"]
+        for position, cards in ((0, intro), (len(parts), outro)):
+            for offset_index, card in enumerate(cards):
+                log(f"  card {card.kind} ({card.duration:.0f}s)")
+                path = compose.render_card(ep, card, position + offset_index)
+                parts.insert(position + offset_index, f"file '{path.as_posix()}'")
+
     ep.concat_list.write_text("\n".join(parts) + "\n")
+    assembled = ep.work / "assembled.mp4" if layout and layout.overlays else ep.draft
     ffmpeg(
         [
-            "-f",
-            "concat",
-            "-safe",
-            "0",
-            "-i",
-            ep.concat_list,
-            "-c",
-            "copy",
-            "-movflags",
-            "+faststart",
-            ep.draft,
+            "-f", "concat", "-safe", "0", "-i", ep.concat_list,
+            "-c", "copy", "-movflags", "+faststart", assembled,
         ]
     )
+    if layout and layout.overlays:
+        compose.apply_overlays(ep, assembled, layout, ep.draft)
     log(f"draft -> {ep.draft}")
