@@ -26,6 +26,7 @@ Fedora
 Linux
 open source = opensource
 LLM = L L M, èl èl èm
+MCP = M C P, emcépé, mcpé
 GPU
 VRAM = V RAM
 MKV = M K V, em ka vé

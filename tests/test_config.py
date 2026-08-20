@@ -60,6 +60,19 @@ def test_whisper_dtw_model_strips_the_ggml_wrapping(tmp_path):
     assert cfg.whisper_dtw_model == "small"
 
 
+def test_the_large_variants_are_spelled_with_dots(tmp_path):
+    # the file is ggml-large-v3-turbo.bin, the preset is large.v3.turbo, and getting it
+    # wrong is `error: unknown DTW preset` + exit(3) — no alignment, no word timings
+    text = MINIMAL.replace("ggml-small.bin", "ggml-large-v3-turbo.bin")
+    assert load(_write(tmp_path, text)).whisper_dtw_model == "large.v3.turbo"
+
+
+def test_a_dotted_english_model_is_left_alone(tmp_path):
+    # ggml-small.en.bin already matches the preset table
+    text = MINIMAL.replace("ggml-small.bin", "ggml-small.en.bin")
+    assert load(_write(tmp_path, text)).whisper_dtw_model == "small.en"
+
+
 def test_missing_required_setting_names_it(tmp_path):
     with pytest.raises(ConfigError, match="WHISPER_MODEL"):
         load(_write(tmp_path, 'WHISPER_BIN="/usr/bin/whisper-cli"\n'))

@@ -82,3 +82,18 @@ def test_the_compositor_noise_is_not_listed_as_something_to_close():
     )
     text = explain(3400, "sonorita-cli", Memory("RTX 3050", 4096, 1300, 2400), small)
     assert "gnome-shell" not in text
+
+
+def test_a_bigger_model_asks_for_more_vram(tmp_path):
+    from screencast.transcribe import VRAM_OVERHEAD_MB, vram_needed
+
+    model = tmp_path / "ggml-small.bin"
+    model.write_bytes(b"\0" * (487 * 1024 * 1024))
+    assert vram_needed(model) == 487 + VRAM_OVERHEAD_MB
+
+
+def test_a_model_that_is_not_there_yet_asks_only_for_the_overhead(tmp_path):
+    # doctor and the start-up check both run before anything downloads a model
+    from screencast.transcribe import VRAM_OVERHEAD_MB, vram_needed
+
+    assert vram_needed(tmp_path / "absent.bin") == VRAM_OVERHEAD_MB

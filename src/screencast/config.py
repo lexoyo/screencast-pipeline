@@ -91,8 +91,15 @@ class Config:
 
     @property
     def whisper_dtw_model(self) -> str:
-        """whisper-cli's -dtw flag wants the bare model name: ggml-small.bin -> small."""
-        return self.whisper_model.name.removeprefix("ggml-").removesuffix(".bin")
+        """whisper-cli's -dtw flag wants the bare model name: ggml-small.bin -> small.
+
+        The large variants are the exception. The file is `ggml-large-v3-turbo.bin`, but
+        the preset table in whisper.cpp spells it `large.v3.turbo` — and an unknown preset
+        is `error: unknown DTW preset` followed by exit(3), not a fallback to no alignment.
+        So: dots rather than dashes, for anything named large.
+        """
+        name = self.whisper_model.name.removeprefix("ggml-").removesuffix(".bin")
+        return name.replace("-", ".") if name.startswith("large") else name
 
     @property
     def mic_from_face(self) -> bool:

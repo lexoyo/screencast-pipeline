@@ -15,6 +15,18 @@ from . import glossary
 from .episode import Episode
 from .shell import ffmpeg, log, run
 
+# Measured on this machine, model loaded onto the card plus its working memory:
+# ggml-small (487 MB) peaked at 948 MB, ggml-large-v3-turbo (1620 MB) at 2000 MB. The
+# overhead does not scale with the model, so it is added rather than multiplied — and
+# rounded up, since being wrong here means an out-of-memory mid-transcription.
+VRAM_OVERHEAD_MB = 700
+
+
+def vram_needed(model: Path) -> int:
+    """How much VRAM this model will want, from its size on disk."""
+    size_mb = model.stat().st_size // (1024 * 1024) if model.is_file() else 0
+    return size_mb + VRAM_OVERHEAD_MB
+
 
 def segments_from_whisper(data: dict[str, Any]) -> list[dict[str, Any]]:
     """Flatten whisper's JSON into {i, start, end, text}, seconds rather than milliseconds."""
@@ -103,7 +115,7 @@ def run_stage(ep: Episode) -> None:
         ffmpeg(["-i", ep.mic, "-map", "0:a:0", "-ac", "1", "-ar", "16000", ep.mic16])
 
     lang = cfg.force_lang or "auto"
-    log(f"whisper ({cfg.whisper_dtw_model}) lang={lang} on normalized audio — this is the slow one")
+    log(f"whisper ({cfg.whisper_dtw_model}) lang={lang} on normalized audio")
     whisper_json(ep, ep.mic16, ep.work / "transcript", word_timings=True)
 
     data = json.loads(ep.transcript_json.read_text())

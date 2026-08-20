@@ -215,17 +215,20 @@ def _run_pipeline(root: Path, cfg, stages) -> int:
 def _check_gpu(ep: Episode, stages) -> None:
     """Fail before the run starts, rather than forty minutes in.
 
-    Only `render` puts anything on the card, and only when it still has music to generate —
-    tracks already on disk are reused, so a second render of the same episode never needs
-    the GPU and is never blocked by a browser being open.
+    Two stages use the card, never at the same time, so the run needs whichever asks for
+    more — not their sum. `render` only needs it while there is still music to generate:
+    tracks already on disk are reused, so a second render is never blocked by an open
+    browser.
     """
-    from . import music
+    from . import music, transcribe
 
-    if "render" not in stages:
-        return
-    if any((ep.work / "music").glob("*/*.mp3")):
-        return
-    gpu.require(music.VRAM_MB, "sonorita-cli (génération musicale)")
+    needs: list[tuple[int, str]] = []
+    if "transcribe" in stages:
+        needs.append((transcribe.vram_needed(ep.cfg.whisper_model), "whisper (transcription)"))
+    if "render" in stages and not any((ep.work / "music").glob("*/*.mp3")):
+        needs.append((music.VRAM_MB, "sonorita-cli (génération musicale)"))
+    if needs:
+        gpu.require(*max(needs))
 
 
 def cmd_plan(args, cfg) -> int:
