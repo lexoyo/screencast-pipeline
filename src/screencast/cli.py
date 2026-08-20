@@ -17,6 +17,7 @@ from pathlib import Path
 
 from . import (
     cuts,
+    gpu,
     measure,
     montage,
     publish,
@@ -200,6 +201,7 @@ def _run_pipeline(root: Path, cfg, stages) -> int:
 
     set_log_file(ep.log_file)
     try:
+        _check_gpu(ep, stages)
         for name in stages:
             run_stage(name, ep)
     except (MissingInput, TimelineError, ToolError, ConfigError) as exc:
@@ -208,6 +210,22 @@ def _run_pipeline(root: Path, cfg, stages) -> int:
     finally:
         lock.unlink(missing_ok=True)
     return 0
+
+
+def _check_gpu(ep: Episode, stages) -> None:
+    """Fail before the run starts, rather than forty minutes in.
+
+    Only `render` puts anything on the card, and only when it still has music to generate —
+    tracks already on disk are reused, so a second render of the same episode never needs
+    the GPU and is never blocked by a browser being open.
+    """
+    from . import music
+
+    if "render" not in stages:
+        return
+    if any((ep.work / "music").glob("*/*.mp3")):
+        return
+    gpu.require(music.VRAM_MB, "sonorita-cli (génération musicale)")
 
 
 def cmd_plan(args, cfg) -> int:
@@ -247,6 +265,7 @@ def cmd_doctor(args, cfg) -> int:
         found = which(tool)
         print(f"  {'✓' if found else '✗'} {tool:12s} {found or 'MISSING'}")
         missing += not found
+    print(gpu.describe())
     print(f"\nrecordings: {RECORDINGS}")
     return 1 if missing else 0
 
