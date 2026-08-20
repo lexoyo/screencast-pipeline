@@ -11,6 +11,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from . import glossary
 from .episode import Episode
 from .shell import ffmpeg, log, run
 
@@ -80,6 +81,12 @@ def whisper_json(
         "-of",
         out_stem,
     ]
+    # Prime the decoder with the names it gets wrong. `--carry-initial-prompt` repeats the
+    # prompt on every window: without it the glossary only biases the opening minute, and a
+    # name spoken at minute nine comes out mangled exactly as before.
+    prompt = glossary.as_prompt(glossary.load())
+    if prompt:
+        cmd += ["--prompt", prompt, "--carry-initial-prompt"]
     if word_timings:
         cmd += ["-ojf", "-dtw", cfg.whisper_dtw_model, "-ml", "70"]
     if srt:
@@ -102,6 +109,22 @@ def run_stage(ep: Episode) -> None:
     data = json.loads(ep.transcript_json.read_text())
     segments = segments_from_whisper(data)
     words = words_from_whisper(data)
+
+    # Second pass, for what the prompt did not catch. Corrections are logged rather than
+    # applied silently: a word in a transcript that nobody can trace back to the audio is
+    # worse than the mistake it replaced.
+    terms = glossary.load()
+    fixed_total: list[tuple[str, str]] = []
+    for item in (*segments, *words):
+        item["text"], changed = glossary.fix(item["text"], terms)
+        fixed_total += changed
+    if fixed_total:
+        counted: dict[tuple[str, str], int] = {}
+        for pair in fixed_total:
+            counted[pair] = counted.get(pair, 0) + 1
+        log(f"glossary: {len(fixed_total)} corrections")
+        for (before, after), count in sorted(counted.items(), key=lambda kv: -kv[1]):
+            log(f"  {before!r} → {after!r} ×{count}")
     ep.segments.write_text(json.dumps(segments, indent=2))
     ep.words.write_text(json.dumps(words))
 

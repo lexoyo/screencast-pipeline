@@ -1,0 +1,31 @@
+# Proper nouns whisper gets wrong. One per line:
+#
+#     Nom Canonique = mauvaise transcription, autre mauvaise transcription
+#
+# Used twice: the canonical spellings prime whisper as its initial prompt, and the whole
+# table corrects what still slipped through afterwards.
+#
+# Case, accents and spacing are handled automatically — "hugging face" finds "Hugging
+# Face" on its own. Aliases are for PHONETIC mistakes, which cannot be guessed: "Cloudcode"
+# and "Claude Code" are simply different words. Add one the day a name comes out mangled.
+
+Claude Code = Cloudcode, Cloud code, Clode code, Claudecode
+Jan = Djann, Jann, Djan
+Silex = Cylex, Silexe
+PeerTube = Peer Tube, Pertube
+ffmpeg = FFM peg, effe em peg
+whisper.cpp = whisper CPP, whisper c++
+Shotcut = Shot cut, Chotcut
+OBS = O B S, obès
+llamafile = lama file, llama file
+Hugging Face = huggingface
+GitHub = Git Hub
+GitLab = Git Lab
+Mastodon
+Fedora
+Linux
+open source = opensource
+LLM = L L M, èl èl èm
+GPU
+VRAM = V RAM
+MKV = M K V, em ka vé
