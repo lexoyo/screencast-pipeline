@@ -36,7 +36,6 @@ Output schema (exact keys):
     "description": "2-4 short paragraphs: what's demoed + why it matters. spoken language.",
     "tags": ["...", "..."],                    // 6-12, lowercase
     "chapters": [ { "at": sec, "label": "..." } ], // `at` in ORIGINAL seconds; remapped later
-    "programme": ["...", "..."],               // the points ANNOUNCED OUT LOUD. omit if none.
     "intro": { "title": "...", "subtitle": "..." },  // opening card. omit if not worth one.
     "outro": { "title": "...", "cta": "..." },       // closing card. omit if not worth one.
     "jingle": { "intro": "...", "outro": "..." }     // the lines SUNG over those cards
@@ -83,22 +82,29 @@ Output schema (exact keys):
   correction filler, KEEP only the corrected statement. Result should read as if said cleanly.
 - **Default to `large`** when talking to camera; switch to **`ecran`** the moment the words
   point at the screen; use **`serre`** only for a brief emphatic line.
-- **The programme, and the cards that recall it.** These work as a pair and are the one
-  place where timing matters more than wording.
-  - `metadata.programme` = the points the speaker announces OUT LOUD ("je vais vous montrer
-    l'installation, l'utilisation, puis la gestion des modèles"). 2-5 entries, 3-6 words
-    each, in the spoken language. If no programme is announced, omit the field — do not
-    manufacture one out of the chapters.
-  - `plan: true` on the segment where that ANNOUNCEMENT is spoken. The panel is shown for
-    exactly as long as that sentence, so it accompanies the words instead of interrupting.
-  - `list_item: {"n": 2}` on the segment where **point 2 actually BEGINS** — usually minutes
-    later, when the speaker moves on to it. NOT where it was announced. The card exists to
-    bring back a promise made earlier; placed next to the announcement it would only repeat
-    what the viewer just read, while hiding the speaker behind a full-screen card.
-  - The card carries the NUMBER only. Its wording comes from `programme`, so the panel and
-    the card can never drift apart.
-  - Only for a real enumeration stated out loud. Do not invent one, and do not use it as a
-    chapter marker — chapters exist separately.
+- **Chapters are ONE list, shown three times.** The panel announces them, a band captions
+  each one when it starts, and the description carries them for YouTube. All three read the
+  same `label`, word for word — a video that promises "Installer Jan" and then captions the
+  same passage "Installation" reads as two different things to anyone who noticed the first.
+  - **3 to 6 chapters**, at real topic shifts. Fewer than the sections you could technically
+    identify: the panel has to be readable in one glance, and a viewer remembers three
+    promises, not nine.
+  - `at` = the ORIGINAL second where the speaker actually moves on to that topic — where
+    they say "bon, l'installation" or "maintenant je vais vous montrer". Not where it was
+    announced earlier.
+  - Labels of 2-5 words, in the spoken language, phrased consistently across the list
+    (all verbs, or all nouns — not "Installer Jan" next to "Utilisation du chat").
+
+- **`plan: true`** on the segment where the speaker announces the programme out loud ("je
+  vais vous montrer l'installation, l'utilisation, puis la gestion des modèles"). The panel
+  shows for exactly as long as that sentence, so it accompanies the words instead of
+  interrupting. If no programme is announced, omit it — do not manufacture the moment.
+
+- **`list_item: {"n": 2}`** on the segment where **chapter 2 actually BEGINS**, when that
+  deserves a full-screen card rather than a discreet band. Reserve it for the two or three
+  turning points of the video: the card hides the speaker, and one at every chapter would
+  make the video a slideshow. The card carries the NUMBER; its wording comes from the
+  chapter label.
 
 - **`intro` / `outro`** are full-screen cards with music, so they lengthen the video by a
   few seconds each. `intro.title` is not the YouTube title — that one carries a keyword — but it is still a
@@ -115,7 +121,6 @@ Output schema (exact keys):
   Name the subject, say what was just shown, land the promise. Omit a side if its card is
   omitted.
 
-- **Chapters**: 3-8, at real topic shifts, `at` = original second where the topic starts.
 - **metadata language** = the spoken language. Title sells the value, not "screencast of X".
 
 Output the JSON object and nothing else.

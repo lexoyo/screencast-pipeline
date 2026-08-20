@@ -36,6 +36,11 @@ OVERLAY_PRIORITY = {"plan": 3, "list": 2, "chapter": 1}
 # hidden behind it for nothing. Far enough away and it does its job: bringing back a promise
 # made minutes ago.
 LIST_CARD_MIN_GAP = 30.0
+
+# A chapter band right after the intro card, or right after the programme panel, says again
+# what was just said. Both were observed on the first real take: chapter one landed four
+# seconds after the intro, chapter two the very second the panel left.
+CHAPTER_MIN_GAP = 8.0
 # Intro and outro carry music and have to breathe. Matches the pilot's calibration.
 INTRO_SECONDS = 4.0
 OUTRO_SECONDS = 4.0
@@ -95,6 +100,7 @@ def build(
     chapter_overlay: float = CHAPTER_OVERLAY,
     list_card_seconds: float = LIST_CARD_SECONDS,
     list_card_min_gap: float = LIST_CARD_MIN_GAP,
+    chapter_min_gap: float = CHAPTER_MIN_GAP,
 ) -> SlidePlan:
     """Lay out the slides over an already-cut timeline."""
     channel = channel or {}
@@ -137,7 +143,7 @@ def build(
     # --- programme: exactly as long as the sentence announcing it
     programme_end: float | None = None
     for seg in kept:
-        if not seg.plan or not meta.programme:
+        if not seg.plan or not meta.chapters:
             continue
         start = body_offset + seg.final_start
         programme_end = body_offset + seg.final_end
@@ -146,7 +152,11 @@ def build(
                 kind="plan",
                 values={
                     "kicker": channel.get("programme_label", "Au programme"),
-                    "chapters": list(meta.programme),
+                    # The panel lists the CHAPTERS, and a band later repeats one of those
+                    # exact labels. One list, seen twice: promising "Installer Jan" and
+                    # captioning the same passage "Installation" reads as two different
+                    # things to anyone who noticed the first.
+                    "chapters": [c.label for c in meta.chapters],
                 },
                 start=start,
                 end=programme_end,
@@ -154,16 +164,30 @@ def build(
         )
         break  # one programme per video, whatever the model tagged
 
-    # --- chapter titles, at the remapped position of each marker
-    for index, chapter in enumerate(meta.chapters, start=1):
+    # --- chapter bands, except where a card already announced the same chapter
+    carded = {
+        _point_label(seg.list_item, [c.label for c in meta.chapters])
+        for seg in kept
+        if seg.list_item
+    }
+    for chapter in meta.chapters:
+        if chapter.label in carded:
+            # The full-screen card already named this chapter, louder. A band repeating the
+            # same words seconds later is pure noise — observed at 4:50 and 4:56 on a real
+            # take, both reading "Gérer les modèles".
+            continue
         # remap_to_final already projects a source second onto the cut body; an intro
         # simply pushes that body back, so the slides only add a constant. Nothing about
         # the remapping itself changes.
         start = body_offset + remap_to_final(chapter.at, kept)
+        if start < body_offset + chapter_min_gap:
+            continue  # too close behind the intro card
+        if programme_end is not None and abs(start - programme_end) < chapter_min_gap:
+            continue  # butting against the programme panel
         overlays.append(
             Overlay(
                 kind="chapter",
-                values={"number": f"{index:02d}", "title": chapter.label},
+                values={"title": chapter.label},
                 start=start,
                 end=min(start + chapter_overlay, body_offset + body_duration),
             )
@@ -182,7 +206,7 @@ def build(
                 kind="list",
                 values={
                     "number": _two_digits(seg.list_item.n),
-                    "label": _point_label(seg.list_item, meta.programme),
+                    "label": _point_label(seg.list_item, [c.label for c in meta.chapters]),
                 },
                 start=start,
                 end=min(start + list_card_seconds, body_offset + body_duration),
@@ -220,17 +244,16 @@ def resolve_conflicts(overlays: list[Overlay]) -> list[Overlay]:
     return sorted(kept, key=lambda o: o.start)
 
 
-def _point_label(item, programme: list[str]) -> str:
-    """The wording of an announced point, taken from the programme.
+def _point_label(item, chapters: list[str]) -> str:
+    """The wording of a point, taken from the chapter list.
 
-    The card carries a number; the words live in the programme and nowhere else. A card
-    that wrote its own copy would eventually say "L'installation" where the panel promised
-    "Installer Jan".
+    A card carries a number; the words live with the chapters and nowhere else, so the
+    panel, the band and the card can never say three different things about one passage.
     """
     if item.n.isdigit():
         index = int(item.n) - 1
-        if 0 <= index < len(programme):
-            return programme[index]
+        if 0 <= index < len(chapters):
+            return chapters[index]
     return item.label
 
 

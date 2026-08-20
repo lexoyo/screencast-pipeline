@@ -61,37 +61,35 @@ def test_the_programme_lasts_exactly_the_sentence_that_announces_it():
         {"start": 0.0, "end": 20.0, "drop": False, "scene": "large"},
         {"start": 20.0, "end": 28.0, "drop": False, "scene": "large", "plan": True},
     ]
-    plan = _plan(timeline, {"programme": ["Installer", "Utiliser"]})
+    plan = _plan(timeline, {"chapters": [{"at": 0, "label": "Installer"}, {"at": 50, "label": "Utiliser"}]})
     layout = build(plan, plan.kept, channel=CHANNEL)
     programme = next(o for o in layout.overlays if o.kind == "plan")
     assert (programme.start, programme.end) == (20.0, 28.0)
 
 
-def test_the_panel_shows_what_was_announced_not_the_detected_chapters():
-    # two different lists: chapters cut the video up for YouTube, the programme is the
-    # promise made out loud. Showing eight chapters where three points were promised
-    # would put words in the speaker's mouth.
+def test_the_panel_shows_the_chapter_labels():
+    # the panel and the bands read from the SAME list, so the video never promises
+    # "Installer Jan" and captions the same passage "Installation"
     timeline = [{"start": 0.0, "end": 30.0, "drop": False, "scene": "large", "plan": True}]
     plan = _plan(timeline, {
-        "programme": ["Installer", "Utiliser", "Gérer les modèles"],
-        "chapters": [{"at": 1, "label": "A"}, {"at": 5, "label": "B"}, {"at": 9, "label": "C"},
-                     {"at": 12, "label": "D"}],
+        "chapters": [{"at": 1, "label": "Installer"}, {"at": 50, "label": "Utiliser"},
+                     {"at": 90, "label": "Gérer les modèles"}],
     })
     layout = build(plan, plan.kept, channel=CHANNEL)
     panel = next(o for o in layout.overlays if o.kind == "plan")
     assert panel.values["chapters"] == ["Installer", "Utiliser", "Gérer les modèles"]
 
 
-def test_a_card_takes_its_wording_from_the_programme():
-    # the card carries a number; the words live in the programme and nowhere else, or the
-    # panel promises "Installer Jan" and the card later says "L'installation"
+def test_a_card_takes_its_wording_from_the_chapter_list():
+    # one list seen three times: the panel, the band and the card must not say three
+    # different things about the same passage
     timeline = [
         {"start": 0.0, "end": 10.0, "drop": False, "scene": "large", "plan": True},
         {"start": 10.0, "end": 200.0, "drop": False, "scene": "ecran"},
         {"start": 200.0, "end": 220.0, "drop": False, "scene": "ecran",
          "list_item": {"n": 2, "label": "libellé concurrent"}},
     ]
-    plan = _plan(timeline, {"programme": ["Installer Jan", "L'utiliser au quotidien"]})
+    plan = _plan(timeline, {"chapters": [{"at": 0, "label": "Installer Jan"}, {"at": 50, "label": "L'utiliser au quotidien"}]})
     layout = build(plan, plan.kept, channel=CHANNEL)
     card = next(o for o in layout.overlays if o.kind == "list")
     assert card.values["label"] == "L'utiliser au quotidien"
@@ -104,7 +102,7 @@ def test_a_card_too_close_to_the_panel_is_not_shown():
         {"start": 10.0, "end": 20.0, "drop": False, "scene": "ecran",
          "list_item": {"n": 1, "label": "Installer"}},
     ]
-    plan = _plan(timeline, {"programme": ["Installer", "Utiliser"]})
+    plan = _plan(timeline, {"chapters": [{"at": 0, "label": "Installer"}, {"at": 50, "label": "Utiliser"}]})
     layout = build(plan, plan.kept, channel=CHANNEL, list_card_min_gap=30.0)
     assert not any(o.kind == "list" for o in layout.overlays)
 
@@ -116,7 +114,7 @@ def test_a_card_far_enough_from_the_panel_is_shown():
         {"start": 200.0, "end": 230.0, "drop": False, "scene": "ecran",
          "list_item": {"n": 1, "label": "Installer"}},
     ]
-    plan = _plan(timeline, {"programme": ["Installer", "Utiliser"]})
+    plan = _plan(timeline, {"chapters": [{"at": 0, "label": "Installer"}, {"at": 50, "label": "Utiliser"}]})
     layout = build(plan, plan.kept, channel=CHANNEL, list_card_min_gap=30.0)
     assert any(o.kind == "list" for o in layout.overlays)
 
@@ -128,7 +126,7 @@ def test_a_card_is_capped_and_does_not_last_the_whole_segment():
         {"start": 200.0, "end": 240.0, "drop": False, "scene": "ecran",
          "list_item": {"n": 1, "label": "Installer"}},
     ]
-    plan = _plan(timeline, {"programme": ["Installer"]})
+    plan = _plan(timeline, {"chapters": [{"at": 0, "label": "Installer"}]})
     layout = build(plan, plan.kept, channel=CHANNEL, list_card_seconds=3.5)
     card = next(o for o in layout.overlays if o.kind == "list")
     assert card.duration == 3.5
@@ -175,3 +173,58 @@ def test_a_chapter_overlay_never_runs_past_the_body():
     layout = build(plan, plan.kept, channel=CHANNEL, chapter_overlay=3.0)
     body_end = sum(seg.duration for seg in plan.kept)
     assert next(o for o in layout.overlays if o.kind == "chapter").end <= body_end
+
+
+def test_a_chapter_band_carries_no_number():
+    # the panel is numbered (01, 02, 03 = announced points) and there are always more
+    # chapters than points: a band reading "02 Installation" eleven seconds after a panel
+    # promising "02 Utiliser le chat" makes the viewer conflate two different lists
+    plan = _plan(BODY, {"chapters": [{"at": 30, "label": "Installation"}]})
+    layout = build(plan, plan.kept, channel=CHANNEL)
+    band = next(o for o in layout.overlays if o.kind == "chapter")
+    assert "number" not in band.values
+    assert band.values["title"] == "Installation"
+
+
+def test_a_chapter_right_after_the_intro_card_is_dropped():
+    # it repeats what the card just said
+    plan = _plan(BODY, {"intro": {"title": "Un titre"},
+                        "chapters": [{"at": 1, "label": "Trop tôt"}]})
+    layout = build(plan, plan.kept, channel=CHANNEL, intro_seconds=4.0, chapter_min_gap=8.0)
+    assert not any(o.kind == "chapter" for o in layout.overlays)
+
+
+def test_a_chapter_butting_against_the_programme_panel_is_dropped():
+    timeline = [
+        {"start": 0.0, "end": 20.0, "drop": False, "scene": "large"},
+        {"start": 20.0, "end": 30.0, "drop": False, "scene": "large", "plan": True},
+        {"start": 30.0, "end": 120.0, "drop": False, "scene": "ecran"},
+    ]
+    plan = _plan(timeline, {"chapters": [{"at": 31, "label": "Juste après"}]})
+    layout = build(plan, plan.kept, channel=CHANNEL, chapter_min_gap=8.0)
+    assert not any(o.kind == "chapter" for o in layout.overlays)
+
+
+def test_a_chapter_far_from_everything_is_kept():
+    timeline = [
+        {"start": 0.0, "end": 20.0, "drop": False, "scene": "large", "plan": True},
+        {"start": 20.0, "end": 200.0, "drop": False, "scene": "ecran"},
+    ]
+    plan = _plan(timeline, {"chapters": [{"at": 120, "label": "Loin"}]})
+    layout = build(plan, plan.kept, channel=CHANNEL, chapter_min_gap=8.0)
+    assert any(o.kind == "chapter" for o in layout.overlays)
+
+
+def test_no_chapter_band_where_a_card_already_named_that_chapter():
+    # the card IS the chapter announcement, louder; a band six seconds later repeating the
+    # same words is noise — seen at 4:50 and 4:56 on a real take
+    timeline = [
+        {"start": 0.0, "end": 100.0, "drop": False, "scene": "large"},
+        {"start": 100.0, "end": 130.0, "drop": False, "scene": "ecran",
+         "list_item": {"n": 2}},
+    ]
+    plan = _plan(timeline, {"chapters": [{"at": 5, "label": "Installer"},
+                                         {"at": 101, "label": "Utiliser le chat"}]})
+    layout = build(plan, plan.kept, channel=CHANNEL)
+    bands = [o.values["title"] for o in layout.overlays if o.kind == "chapter"]
+    assert "Utiliser le chat" not in bands

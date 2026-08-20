@@ -4,17 +4,22 @@
 <style>
 /* A chapter overlay confirms what is being said out loud — it does not narrate. Hence a
  * single line, low in frame, readable in one glance and gone in three seconds. A list of
- * bullet points here would sit on the picture long enough to hide what is being shown. */
+ * bullet points here would sit on the picture long enough to hide what is being shown.
+ *
+ * NO NUMBER, deliberately. The programme panel is numbered (01, 02, 03 = the points
+ * announced out loud) and there are always more chapters than announced points — eight
+ * against three on the first real take. A numbered band eleven seconds after the panel
+ * read "02 Installation" right below a panel promising "02 Utiliser le chat": two
+ * numbering schemes on screen, and the viewer can only conflate them. A chapter is a
+ * signpost, not a list. */
 .bar {
   position: absolute; left: 0; right: 0; bottom: 108px;
   padding: 40px 130px;
   background: var(--overlay-bg);
   border-left: 14px solid var(--rule);
 }
-.number { font-size: 34px; font-weight: 700; letter-spacing: .18em; color: var(--muted); }
-.title  { font-size: 66px; font-weight: 600; color: var(--fg); margin-top: 14px; line-height: 1.08; }
+.title { font-size: 66px; font-weight: 600; color: var(--fg); line-height: 1.08; }
 </style>
 <div class="bar">
-  <div class="number">$number</div>
   <div class="title">$title</div>
 </div>
