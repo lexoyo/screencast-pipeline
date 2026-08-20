@@ -30,7 +30,6 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from string import Template
 
-from . import gpu
 from .shell import ToolError, log, run
 from .slideplan import SlidePlan
 
@@ -39,11 +38,6 @@ PROMPTS = Path(__file__).resolve().parent / "music_prompts"
 VIBE_INTRO = "Screencast Intro"
 VIBE_OUTRO = "Screencast Outro"
 VIBE_BED = "Screencast Bed"
-
-# What sonorita-cli loads onto the card: 1379 + 748 + 677 + 322 MB of GGUF, plus room for
-# the latents it works in. On a 4 GB laptop card that is nearly the whole thing, which is
-# why the run refuses to start when a browser is holding a slice of it (`gpu.require`).
-VRAM_MB = 3400
 
 # The generator clamps anything outside this range, so asking for less is pointless.
 MIN_DURATION = 30
@@ -115,11 +109,6 @@ def generate(ep, vibe: str, seconds: int, *, out_dir: Path, prompts: Path) -> Pa
     existing = sorted(out_dir.glob("*.mp3"))
     if existing:
         return existing[0]
-
-    # Checked again here, not only at start-up: a browser can be opened during the ten
-    # minutes of transcription that separate the two moments. apply_music turns this into
-    # a logged "music skipped" rather than a lost render.
-    gpu.require(VRAM_MB, "sonorita-cli (génération musicale)")
 
     out_dir.mkdir(parents=True, exist_ok=True)
     seconds = max(MIN_DURATION, min(MAX_DURATION, seconds))
