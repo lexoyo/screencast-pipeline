@@ -114,7 +114,10 @@ def build(
             Card(
                 kind="intro",
                 values={
-                    "kicker": channel.get("name", ""),
+                    # The territory, not the name. This is the most-read zone of the
+                    # video, and the channel is already carried by the handle on every
+                    # chapter band. Falls back to the name for a channel with no kicker.
+                    "kicker": channel.get("kicker") or channel.get("name", ""),
                     "title": meta.intro.title,
                     "subtitle": meta.intro.subtitle,
                 },
@@ -132,7 +135,13 @@ def build(
                 kind="outro",
                 values={
                     "title": meta.outro.title,
-                    "cta": meta.outro.subtitle,
+                    # A property of the channel, not of the episode. Letting the model
+                    # write it produced a different call to action every video — which
+                    # makes attribution impossible, and produced "écrivez-moi" with no
+                    # address at all. The clickable link belongs in the description, where
+                    # it can be tracked per video; the card only says the sentence.
+                    # Empty channel cta = no line, which beats a random one.
+                    "cta": channel.get("cta", ""),
                     "handle": channel.get("handle", ""),
                 },
                 start=body_offset + body_duration,
