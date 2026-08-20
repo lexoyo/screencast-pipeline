@@ -28,6 +28,8 @@ from . import (
     timeline,
     transcribe,
 )
+from .channel import ChannelError
+from .channel import load as load_channel
 from .config import ConfigError, describe, load
 from .episode import Episode, MissingInput
 from .shell import ToolError, log, set_log_file
@@ -41,6 +43,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 RECORDINGS = Path(os.environ.get("REC_DIR", Path.home() / "Videos" / "Screencasts"))
 CONTAINERS = (".mkv", ".mp4", ".mov")
 
+CHANNEL = None  # set from --channel before any stage runs
+
 STAGES = (
     "measure",
     "transcribe",
@@ -51,10 +55,6 @@ STAGES = (
     "subtitles",
     "publish",
 )
-
-# Channel identity — the name and wording that appear on the slides. Destined for its own
-# file, so that a second channel means a second file rather than an edit in the code.
-CHANNEL = {"name": "Alex Hoyau", "handle": "@AlexHoyau", "programme_label": "Au programme"}
 
 # Every external binary the harness drives, and what stops working without it.
 TOOLS = {
@@ -120,10 +120,10 @@ def run_stage(name: str, ep: Episode) -> None:
         montage.run_stage(ep, PROMPTS)
     elif name == "render":
         plan = _plan(ep)
-        render.run(ep, plan, slideplan.build(plan, plan.kept, channel=CHANNEL))
+        render.run(ep, plan, slideplan.build(plan, plan.kept, channel=CHANNEL.as_values()))
     elif name == "shotcut":
         plan = _plan(ep)
-        shotcut.run(ep, plan, slideplan.build(plan, plan.kept, channel=CHANNEL))
+        shotcut.run(ep, plan, slideplan.build(plan, plan.kept, channel=CHANNEL.as_values()))
     elif name == "subtitles":
         subtitles.run_stage(ep, PROMPTS)
     elif name == "publish":
@@ -217,7 +217,7 @@ def cmd_plan(args, cfg) -> int:
         print(exc, file=sys.stderr)
         return 1
     kept = plan.kept
-    layout = slideplan.build(plan, kept, channel=CHANNEL)
+    layout = slideplan.build(plan, kept, channel=CHANNEL.as_values())
     print()
     print(slideplan.describe(layout, sum(seg.duration for seg in kept)))
     return 0
@@ -257,6 +257,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--config", default=None, help="defaults to ./config.env, then the project root"
     )
+    parser.add_argument(
+        "--channel", default="alexhoyau", help="whose video this is (see src/screencast/channels)"
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     new = sub.add_parser("new", help="latest recording -> full deliverable")
@@ -280,5 +283,11 @@ def main(argv: list[str] | None = None) -> int:
         cfg = load(Path(args.config) if args.config else default_config_path())
     except ConfigError as exc:
         print(f"config: {exc}", file=sys.stderr)
+        return 2
+    global CHANNEL
+    try:
+        CHANNEL = load_channel(args.channel)
+    except ChannelError as exc:
+        print(f"channel: {exc}", file=sys.stderr)
         return 2
     return args.func(args, cfg)

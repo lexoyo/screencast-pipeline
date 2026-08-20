@@ -86,9 +86,14 @@ Output schema (exact keys):
   each one when it starts, and the description carries them for YouTube. All three read the
   same `label`, word for word — a video that promises "Installer Jan" and then captions the
   same passage "Installation" reads as two different things to anyone who noticed the first.
-  - **3 to 6 chapters**, at real topic shifts. Fewer than the sections you could technically
-    identify: the panel has to be readable in one glance, and a viewer remembers three
-    promises, not nine.
+  - **If the speaker announces a plan out loud, the chapters ARE that plan** — exactly,
+    one chapter per announced point, no more. "je vous montre comment l'installer, vite
+    fait comment l'utiliser, et comment gérer les modèles" is THREE chapters. Adding a
+    fourth for a step you noticed along the way breaks the promise the viewer just heard
+    and read on the panel. Steps inside a point are not chapters.
+  - If no plan is announced, find **3 to 6** at real topic shifts. Fewer than the sections
+    you could technically identify: the panel has to be readable in one glance, and a
+    viewer remembers three promises, not nine.
   - `at` = the ORIGINAL second where the speaker actually moves on to that topic — where
     they say "bon, l'installation" or "maintenant je vais vous montrer". Not where it was
     announced earlier.
