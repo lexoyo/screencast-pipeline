@@ -7,11 +7,10 @@ shot once, the close-up once, for the whole project.
 
 from __future__ import annotations
 
-import math
 from pathlib import Path
 
 from .episode import Episode
-from .shell import ffprobe_duration, log
+from .shell import ffprobe_duration, log, loudness_lufs
 from .slideplan import SlidePlan
 from .sync import camera_offset
 from .timecode import mlt_timecode as tc
@@ -66,30 +65,37 @@ def _slide_track(entries: list[tuple[int, float, float]]) -> list[str]:
     return rows
 
 
-def _music_producers(tracks: list[Path]) -> str:
-    """One producer per music file, audio only."""
+def _music_producers(beds) -> str:
+    """One producer per bed, audio only, each carrying its own level.
+
+    Not one per file. Two beds can read the same track at very different levels — the
+    music under a card sits at speech level, the bed under speech 18 dB below it — and in
+    MLT a filter attaches to a producer, never to a playlist entry. One producer per bed is
+    what lets each stretch keep the level the render gave it.
+    """
     return "\n".join(
         f'  <producer id="music{index}" out="{tc(3600)}">'
         f'<property name="length">{tc(3600)}</property>'
-        f'<property name="resource">{track}</property>'
+        f'<property name="resource">{bed.track}</property>'
         f'<property name="mlt_service">avformat-novalidate</property>'
-        f'<property name="video_index">-1</property></producer>'
-        for index, track in enumerate(tracks)
+        f'<property name="video_index">-1</property>'
+        f"{_volume_filter(bed.gain_db)}</producer>"
+        for index, bed in enumerate(beds)
     )
 
 
-def _music_track(beds, tracks: list[Path]) -> list[str]:
+def _music_track(beds) -> list[str]:
     """Music on its own playlist, so it can be levelled or muted without touching the voice.
 
     Each entry reads its own slice of its own track: `in`/`out` are positions INSIDE the
-    music file, the blanks before them place it on the timeline.
+    music file, the blanks before them place it on the timeline. `beds` must already be in
+    timeline order — the entry at position i refers to the producer built from bed i.
     """
     rows: list[str] = []
     cursor = 0.0
-    for bed in sorted(beds, key=lambda b: b.start):
+    for index, bed in enumerate(beds):
         if bed.start > cursor:
             rows.append(_blank(bed.start - cursor))
-        index = tracks.index(bed.track)
         rows.append(
             f'    <entry producer="music{index}" '
             f'in="{tc(bed.source_offset)}" out="{tc(bed.source_offset + bed.duration)}"/>'
@@ -98,9 +104,13 @@ def _music_track(beds, tracks: list[Path]) -> list[str]:
     return rows
 
 
-def _volume_filter(level: float) -> str:
-    """MLT wants decibels where the mix uses a linear gain."""
-    db = 20 * math.log10(level) if level > 0 else -60
+def _volume_filter(db: float) -> str:
+    """MLT wants decibels, and a bed's gain is already expressed in them.
+
+    It used to convert from a linear level here, from a `Bed.volume` that stopped existing
+    when levels moved to measured LUFS. The project silently kept the old call until a real
+    episode with music hit it.
+    """
     return (
         '<filter><property name="mlt_service">volume</property>'
         f'<property name="level">{db:.1f}</property></filter>'
@@ -167,7 +177,6 @@ def build(ep: Episode, plan: Edl, layout: SlidePlan | None = None) -> str:
             slide_images.append(image)
 
     # --- music: its own playlist, so it can be levelled or muted without touching the voice
-    music_tracks: list[Path] = []
     music_beds = []
     if layout and (layout.cards or layout.overlays):
         from . import music as music_mod
@@ -176,14 +185,20 @@ def build(ep: Episode, plan: Edl, layout: SlidePlan | None = None) -> str:
         by_kind = {path.parent.name: path for path in found}
         if by_kind:
             bed_dur = ffprobe_duration(by_kind["bed"]) if "bed" in by_kind else 0.0
-            music_beds = music_mod.plan_beds(layout, by_kind, bed_dur)
-            music_tracks = sorted({bed.track for bed in music_beds})
+            # Same measurement as the render: without it every bed would sit at 0 dB and
+            # the project would not sound like the video it comes with.
+            music_beds = music_mod.with_gains(
+                music_mod.plan_beds(layout, by_kind, bed_dur),
+                by_kind,
+                cfg.audio_lufs,
+                loudness_lufs,
+            )
+            music_beds.sort(key=lambda bed: bed.start)
 
-    track_music = _music_track(music_beds, music_tracks) if music_beds else []
-    music_producers = _music_producers(music_tracks) if music_tracks else ""
+    track_music = _music_track(music_beds) if music_beds else []
+    music_producers = _music_producers(music_beds) if music_beds else ""
     music_playlist = (
-        f'  <playlist id="track_music">\n{chr(10).join(track_music)}\n'
-        f"    {_volume_filter(music_beds[0].volume)}\n  </playlist>"
+        f'  <playlist id="track_music">\n{chr(10).join(track_music)}\n  </playlist>'
         if track_music
         else ""
     )
