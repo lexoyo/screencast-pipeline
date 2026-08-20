@@ -252,7 +252,7 @@ def test_the_intro_card_lands_after_the_spoken_summary():
     # not at 0:00: a title card before the first word is a toll gate, and Alex's shape is
     # hook, then summary, then part one
     plan = _summary_plan()
-    layout = _summary_plan and build(plan, plan.kept, channel=CHANNEL, intro_seconds=6.0)
+    layout = build(plan, plan.kept, channel=CHANNEL, intro_seconds=6.0)
     intro = next(c for c in layout.cards if c.kind == "intro")
     assert intro.start == 30.0     # the summary segment ends there
     assert intro.after_index == 1  # it follows the second kept segment
