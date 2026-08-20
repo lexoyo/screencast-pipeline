@@ -108,13 +108,20 @@ def overlay_graph(overlays: list[tuple[Overlay, Path]], fade: float = 0.25) -> s
 
     for index, (overlay, _) in enumerate(overlays):
         # A hard cut on a text panel reads as a glitch; a quarter-second fade reads as a
-        # deliberate card. The alpha ramps in and out inside the overlay's own window.
+        # deliberate card.
+        #
+        # The fade times are ABSOLUTE, which only works because each PNG is fed with
+        # `-loop 1` and therefore runs alongside the video from second zero. Without the
+        # loop a PNG is a single frame at t=0: `fade=t=in:st=29` would never be reached,
+        # the alpha would stay at zero, and the overlay would be fully transparent — which
+        # is exactly what shipped once. Every overlay was invisible in a six-minute render
+        # and nothing in the logs said so.
         alpha = (
             f"format=rgba,fade=t=in:st={overlay.start}:d={fade}:alpha=1,"
             f"fade=t=out:st={max(overlay.start, overlay.end - fade)}:d={fade}:alpha=1"
         )
         faded = f"ov{index}"
-        chain.append(f"[{index + 1}:v]{alpha},setpts=PTS-STARTPTS+{overlay.start}/TB[{faded}]")
+        chain.append(f"[{index + 1}:v]{alpha}[{faded}]")
         label = f"v{index}"
         chain.append(
             f"[{current}][{faded}]overlay=0:0:enable='between(t,{overlay.start},{overlay.end})'"
@@ -137,7 +144,8 @@ def apply_overlays(ep: Episode, source: Path, layout: SlidePlan, out: Path) -> P
 
     inputs: list[str | Path] = ["-i", source]
     for _, image in rendered:
-        inputs += ["-i", image]
+        inputs += ["-loop", "1", "-i", image]  # see overlay_graph: the loop is what makes
+        # the absolute fade times reachable
 
     log(f"compositing {len(rendered)} overlays")
     ffmpeg(
@@ -147,6 +155,7 @@ def apply_overlays(ep: Episode, source: Path, layout: SlidePlan, out: Path) -> P
             "-map", "[out]", "-map", "0:a?",
             "-c:v", "libx264", "-preset", "veryfast", "-crf", str(ep.cfg.draft_crf),
             "-pix_fmt", "yuv420p", "-c:a", "copy",
+            "-shortest",  # the looped PNGs are endless; the video decides the length
             out,
         ]
     )

@@ -11,42 +11,10 @@ import json
 
 from . import compose
 from .episode import Episode
-from .layout import escape_filter_path, wrap
 from .shell import ffmpeg, log
 from .slideplan import SlidePlan
 from .sync import camera_offset
-from .timeline import Edl, KeptSegment, ListItem
-
-
-def list_card_filter(item: ListItem, ep: Episode, index: int) -> str:
-    """Blur the shot, dim it, and stamp the number huge with its label underneath.
-
-    The label goes through a FILE, never through `text=`: an apostrophe or a colon in a
-    French sentence breaks the filtergraph, and both are everywhere in spoken French.
-    """
-    cfg = ep.cfg
-    if not item or (not item.n and not item.label):
-        return ""
-
-    alpha = f":alpha='min(1,t/{cfg.list_fade})'" if cfg.list_fade > 0 else ""
-    parts = [f",gblur=sigma={cfg.list_blur},eq=brightness={cfg.list_darken}:saturation=0.55"]
-
-    if item.n:
-        number = f"{int(item.n):02d}." if item.n.isdigit() else item.n
-        parts.append(
-            f",drawtext=fontfile={cfg.list_font}:text='{number}':fontcolor=white"
-            f":fontsize={int(cfg.out_h * 0.176)}:x=(w-text_w)/2:y={int(cfg.out_h * 0.23)}{alpha}"
-        )
-    if item.label:
-        label_file = ep.segdir / f"label{index:04d}.txt"
-        label_file.write_text("\n".join(wrap(item.label)) + "\n")
-        parts.append(
-            f",drawtext=fontfile={cfg.list_font}:textfile={escape_filter_path(str(label_file))}"
-            f":text_align=T+C:fontcolor=white:fontsize={int(cfg.out_h * 0.076)}"
-            f":line_spacing={int(cfg.out_h * 0.017)}"
-            f":x=(w-text_w)/2:y={int(cfg.out_h * 0.433)}{alpha}"
-        )
-    return "".join(parts)
+from .timeline import Edl, KeptSegment
 
 
 def _segment_graph(ep: Episode, seg: KeptSegment, index: int, params: dict, offset: float) -> str:
@@ -54,13 +22,12 @@ def _segment_graph(ep: Episode, seg: KeptSegment, index: int, params: dict, offs
     cfg = ep.cfg
     fill = f"scale={cfg.out_w}:{cfg.out_h}:force_original_aspect_ratio=increase,crop={cfg.out_w}:{cfg.out_h}"
     mic = "0:a" if not cfg.mic_from_face else "1:a"
-    card = list_card_filter(seg.list_item, ep, index) if seg.list_item else ""
     audio = f"[{mic}]atrim={seg.start}:{seg.end},asetpts=PTS-STARTPTS,{params['audio_filter']}[a]"
 
     if seg.scene == "ecran":
         # screen.mkv already carries the webcam in a corner, baked in by OBS
         video = (
-            f"[0:v]trim={seg.start}:{seg.end},setpts=PTS-STARTPTS,{fill}{card},fps={cfg.out_fps}[v]"
+            f"[0:v]trim={seg.start}:{seg.end},setpts=PTS-STARTPTS,{fill},fps={cfg.out_fps}[v]"
         )
         return f"{video};{audio}"
 
@@ -80,7 +47,7 @@ def _segment_graph(ep: Episode, seg: KeptSegment, index: int, params: dict, offs
     tpad = f",tpad=start_duration={lead}:start_mode=clone" if lead > 0 else ""
     video = (
         f"[1:v]trim={cam_start}:{cam_end},setpts=PTS-STARTPTS,{params['video_filter']},"
-        f"{fill}{zoom}{tpad}{card},fps={cfg.out_fps}[v]"
+        f"{fill}{zoom}{tpad},fps={cfg.out_fps}[v]"
     )
     return f"{video};{audio}"
 
@@ -142,11 +109,17 @@ def run(ep: Episode, plan: Edl, layout: SlidePlan | None = None) -> None:
         ep.slidedir.mkdir(parents=True, exist_ok=True)
         intro = [c for c in layout.cards if c.kind == "intro"]
         outro = [c for c in layout.cards if c.kind != "intro"]
-        for position, cards in ((0, intro), (len(parts), outro)):
-            for offset_index, card in enumerate(cards):
-                log(f"  card {card.kind} ({card.duration:.0f}s)")
-                path = compose.render_card(ep, card, position + offset_index)
-                parts.insert(position + offset_index, f"file '{path.as_posix()}'")
+        # The card index is its position in layout.cards, never its position in the
+        # timeline: the two disagreed and the outro was rendered twice, once as card01 and
+        # once as card28, from the same values.
+        for card in intro:
+            path = compose.render_card(ep, card, layout.cards.index(card))
+            log(f"  card {card.kind} ({card.duration:.0f}s)")
+            parts.insert(0, f"file '{path.as_posix()}'")
+        for card in outro:
+            path = compose.render_card(ep, card, layout.cards.index(card))
+            log(f"  card {card.kind} ({card.duration:.0f}s)")
+            parts.append(f"file '{path.as_posix()}'")
 
     ep.concat_list.write_text("\n".join(parts) + "\n")
     assembled = ep.work / "assembled.mp4" if layout and layout.overlays else ep.draft

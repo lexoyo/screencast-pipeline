@@ -100,8 +100,10 @@ Output schema (exact keys):
     chapter marker — chapters exist separately.
 
 - **`intro` / `outro`** are full-screen cards with music, so they lengthen the video by a
-  few seconds each. `intro.title` is not the YouTube title: that one carries a keyword, this
-  one has to be read in two seconds. `outro.cta` asks for ONE thing — a viewer who reached
+  few seconds each. `intro.title` is not the YouTube title — that one carries a keyword — but it is still a
+  TITLE: a short sentence saying what the viewer is about to see, 4 to 8 words. Not a bare
+  product name: "Jan" tells someone who lands on the video nothing, "Faire tourner un LLM
+  en local, simplement" does. `intro.subtitle` adds the angle in a handful of words. `outro.cta` asks for ONE thing — a viewer who reached
   the end acts on a single clear ask and on nothing at all if given a list. Omit either card
   when the take does not warrant it rather than filling it with something empty.
 
