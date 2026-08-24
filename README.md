@@ -133,10 +133,15 @@ The id is `provider/model` — the `openrouter/` prefix included. Without it ope
 answers `Unexpected server error`, which names nothing; the wrapper turns that into a
 sentence saying what the id should look like.
 
-Two details the wrapper exists for. It runs opencode in an **empty throwaway directory**,
-so the brain sees the prompt on stdin and nothing else — no `AGENTS.md`, no episode files.
-And it reads `--format json`, so the coloured `> build · …` banner opencode prints never
-ends up inside a `.srt`. The privacy line does not move: the rushes stay here, the
+Three details the wrapper exists for. It declares, in that same throwaway directory, an
+opencode agent with **no tools at all** — the one thing that makes this work. `opencode
+run` otherwise starts an *agent*, and a model in an agent harness behaves like one: the
+first montage attempt came back as "I'll analyse this transcript carefully…" and then
+handed control back, waiting to use tools it had no use for, having written no JSON. With
+no tools, answering is all that is left. It runs in an **empty directory**, so the brain
+sees the prompt on stdin and nothing else — no `AGENTS.md`, no episode files. And it reads
+`--format json`, so the coloured `> build · …` banner opencode prints never ends up inside
+a `.srt`. The privacy line does not move: the rushes stay here, the
 transcript text is what goes out — to OpenRouter now rather than to Anthropic.
 
 **The five calls**, if you are choosing a model: the montage EDL (the demanding one —

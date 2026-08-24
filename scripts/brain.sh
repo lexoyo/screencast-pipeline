@@ -35,12 +35,41 @@ done
 workdir="$(mktemp -d)"
 trap 'rm -rf "$workdir"' EXIT
 
+# Un agent SANS OUTILS, defini dans ce dossier jetable pour n avoir a rien installer
+# chez l utilisateur. C est le correctif du premier montage rate : l agent par defaut
+# d opencode a des outils, alors le modele a repondu "je vais analyser ce transcript"
+# et a rendu la main en attendant de s en servir, sans jamais ecrire le JSON. Sans
+# outil, il ne lui reste qu a repondre.
+mkdir -p "$workdir/.opencode/agent"
+cat > "$workdir/.opencode/agent/brain.md" <<'AGENT'
+---
+description: Repond directement, sans outil
+mode: primary
+tools:
+  bash: false
+  edit: false
+  write: false
+  read: false
+  grep: false
+  glob: false
+  list: false
+  patch: false
+  todowrite: false
+  todoread: false
+  webfetch: false
+  task: false
+---
+Tu réponds à la demande directement, dans ton message, en une seule fois.
+Tu n'as aucun outil et rien à explorer : tout ce qu'il faut est dans le message.
+N'annonce pas ce que tu vas faire — produis le résultat demandé, et rien d'autre.
+AGENT
+
 # --format json : la sortie normale est colorée et précédée d'un en-tête « > build · … »,
 # qui finirait dans un fichier .srt. Ici on ne garde que le texte de la réponse.
 model_arg=()
 [ -n "${BRAIN_MODEL:-}" ] && model_arg=(-m "$BRAIN_MODEL")
 
-opencode run --dir "$workdir" "${model_arg[@]}" --format json \
+opencode run --dir "$workdir" --agent brain "${model_arg[@]}" --format json \
   | python3 -c '
 import json, sys
 
