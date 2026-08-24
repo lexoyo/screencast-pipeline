@@ -142,7 +142,7 @@ def editorial(claude_bin: str, prompts_dir: Path, payload: dict, work: Path) -> 
     full = f"{prompt}\n\n## DATA\n{json.dumps(payload, ensure_ascii=False)}"
     (work / "qc_prompt.txt").write_text(full)
     try:
-        answer = brain(claude_bin, full)
+        answer = brain(claude_bin, full, work, "qc")
         (work / "qc_raw.txt").write_text(answer)
         data = json.loads(extract_json_object(strip_code_fences(answer)))
     except Exception as exc:  # noqa: BLE001 — no review must not cost the deliverable

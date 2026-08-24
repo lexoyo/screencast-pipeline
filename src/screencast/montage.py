@@ -41,7 +41,7 @@ def run_stage(ep: Episode, prompts_dir: Path) -> None:
     ep.brain_prompt.write_text(f"{prompt}\n\n## DATA\n{json.dumps(payload)}")
 
     log(f"montage brain: {ep.cfg.claude_bin} (transcript text only leaves the machine)")
-    answer = brain(ep.cfg.claude_bin, ep.brain_prompt.read_text())
+    answer = brain(ep.cfg.claude_bin, ep.brain_prompt.read_text(), ep.work, "montage")
     ep.brain_raw.write_text(answer)
 
     data = parse_answer(answer)

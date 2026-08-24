@@ -45,7 +45,7 @@ def run_stage(ep: Episode, prompts_dir: Path, title: str = "") -> None:
     )
     (ep.work / "tr_full.txt").write_text(prompt)
 
-    answer = brain(cfg.claude_bin, prompt)
+    answer = brain(cfg.claude_bin, prompt, ep.work, "sous-titres")
     (ep.work / "tr_raw.srt").write_text(answer)
     (ep.subs_dir / f"{target}.srt").write_text(clean_srt(answer))
     log(f"subs -> subs/{source_lang}.srt + subs/{target}.srt")

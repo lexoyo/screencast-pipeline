@@ -10,13 +10,58 @@ vide — le cas le plus déroutant, puisque rien ne distingue à l'œil nu un mo
 """
 
 import json
+import os
 import sys
+import time
+
+
+def say(message: str) -> None:
+    """À l'écran, et dans le journal de l'épisode quand le pipeline en a nommé un."""
+    print(f"brain: {message}", file=sys.stderr)
+    journal = os.environ.get("BRAIN_LOG_FILE")
+    if journal:
+        with open(journal, "a") as handle:
+            handle.write(f"[{time.strftime('%F %T')}] brain: {message}\n")
 
 parts: dict[str, str] = {}      # id -> texte ; un part réémis en streaming ne compte qu'une fois
 reasoning: dict[str, str] = {}  # idem pour le raisonnement : jamais renvoyé, mais mesuré
 errors: list[str] = []
 used = {"in": 0, "out": 0, "reasoning": 0, "cost": 0.0}
-served = ""  # le modèle qui a réellement répondu, tel qu'opencode le nomme
+served = ""   # le modèle qui a réellement répondu, tel qu'opencode le nomme
+session = ""  # son identifiant de session, seul lien vers ce nom
+
+def _model_of_session(session_id: str) -> str:
+    """Demande à opencode quel modèle il a servi pour cette session.
+
+    Le flux `--format json` ne le dit nulle part — il ne porte que step_start, text et
+    step_finish. Le nom vit dans la base d'opencode, et le flux donne l'identifiant de
+    session qui y mène. C'est un détour, mais c'est la seule façon de savoir ce qui a
+    répondu quand le modèle est choisi dans le TUI plutôt que dans config.env.
+    """
+    import os
+    import sqlite3
+
+    path = os.path.expanduser("~/.local/share/opencode/opencode.db")
+    if not session_id or not os.path.exists(path):
+        return ""
+    try:
+        db = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=2)
+        row = db.execute("select model from session where id = ?", (session_id,)).fetchone()
+        db.close()
+    except Exception:
+        return ""   # une base verrouillée ne doit pas coûter un montage
+    if not row or not row[0]:
+        return ""
+    try:
+        model = json.loads(row[0])
+    except json.JSONDecodeError:
+        return str(row[0])
+    name = model.get("id", "?")
+    provider = model.get("providerID")
+    variant = model.get("variant")
+    full = f"{provider}/{name}" if provider else name
+    return f"{full} ({variant})" if variant and variant != "default" else full
+
 
 def _find_model(node) -> str:
     """Cherche modelID/providerID n'importe où dans un événement, sans en présumer la forme."""
@@ -47,6 +92,8 @@ for line in sys.stdin:
     except json.JSONDecodeError:
         continue
 
+    if not session:
+        session = event.get("sessionID") or ""
     if not served:
         # Quand BRAIN_MODEL est vide, opencode prend le dernier modèle choisi dans son
         # TUI — un état invisible depuis ici. Il le nomme dans ses événements : c'est la
@@ -74,6 +121,9 @@ for line in sys.stdin:
         used["reasoning"] += tokens.get("reasoning", 0)
         used["cost"] += part.get("cost") or 0
 
+if not served:
+    served = _model_of_session(session)
+
 answer = "".join(parts.values())
 thought = "".join(reasoning.values())
 
@@ -84,7 +134,7 @@ elif thought:
     note += f", plus {len(thought) // 1024} Ko de raisonnement"
 if used["cost"]:
     note += f" — {used['cost']:.4f} $"
-print(f"brain: {note}", file=sys.stderr)
+say(note)
 
 if not answer.strip():
     detail = " ; ".join(errors)

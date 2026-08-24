@@ -41,7 +41,11 @@ API_KEY="${BRAIN_API_KEY:-$(from_config BRAIN_API_KEY)}"
 LOGDIR="${BRAIN_LOG:-$(from_config BRAIN_LOG)}"
 VARIANT="${BRAIN_VARIANT:-$(from_config BRAIN_VARIANT)}"
 
-say() { echo "brain: $*" >&2; }   # stderr : traverse le pipeline sans polluer la réponse
+LOGFILE="${BRAIN_LOG_FILE:-}"   # le log.md de l'épisode, quand le pipeline nous le dit
+say() {
+  echo "brain: $*" >&2
+  [ -n "$LOGFILE" ] && echo "[$(date '+%F %T')] brain: $*" >> "$LOGFILE" || true
+}
 
 prompt="$(cat)"
 started=$(date +%s)
@@ -51,7 +55,8 @@ started=$(date +%s)
 # mois plus tard qui a écrit le titre d'une vidéo.
 archive=""
 if [ -n "$LOGDIR" ]; then
-  archive="$LOGDIR/$(date +%Y-%m-%d_%H%M%S)-$(echo "${MODEL:-defaut}" | tr '/' '_')"
+  archive="$LOGDIR"
+  [ -e "$archive/prompt.txt" ] && archive="$LOGDIR-$(date +%H%M%S)" || true
   mkdir -p "$archive"
   printf '%s' "$prompt" > "$archive/prompt.txt"
   { echo "date    $(date -Is)"; echo "modele  ${MODEL:-<défaut opencode>}"
@@ -127,7 +132,7 @@ set +e
 opencode run --dir "$workdir" --agent brain "${model_arg[@]}" --format json <<< "$prompt" \
     2> "$oclog" \
   | tee ${archive:+"$archive/flux-opencode.jsonl"} \
-  | python3 "$here/brain-parse.py" \
+  | BRAIN_LOG_FILE="$LOGFILE" python3 "$here/brain-parse.py" \
   | tee ${archive:+"$archive/reponse.txt"}
 code=${PIPESTATUS[2]}
 set -e

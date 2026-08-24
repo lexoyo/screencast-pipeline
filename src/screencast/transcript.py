@@ -90,7 +90,7 @@ def build(ep: Episode, prompts_dir: Path, title: str, language: str) -> dict:
     (ep.work / "transcript_prompt.txt").write_text(full)
 
     log(f"transcript: {len(cues)} cues → document + links")
-    answer = brain(ep.cfg.claude_bin, full)
+    answer = brain(ep.cfg.claude_bin, full, ep.work, f"transcript-{language}")
     (ep.work / "transcript_raw.txt").write_text(answer)
     return json.loads(extract_json_object(strip_code_fences(answer)))
 

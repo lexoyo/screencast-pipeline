@@ -72,7 +72,7 @@ def translate_metadata(ep: Episode, prompts_dir: Path, plan: Edl,
 
     log("metadata: translate to English")
     try:
-        answer = brain(ep.cfg.claude_bin, full)
+        answer = brain(ep.cfg.claude_bin, full, ep.work, "metadonnees-en")
         data = json.loads(extract_json_object(strip_code_fences(answer)))
     except Exception as exc:  # noqa: BLE001 — no English metadata must not cost the deliverable
         log(f"⚠ metadata EN skipped: {exc}")

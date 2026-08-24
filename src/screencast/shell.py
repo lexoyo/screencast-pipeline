@@ -8,6 +8,7 @@ with the tail of stderr attached, which is the part that actually says what went
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import time
@@ -54,6 +55,8 @@ def run(
     capture: bool = False,
     stdin_text: str | None = None,
     allow_fail: bool = False,
+    passthrough_stderr: bool = False,
+    env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Run a command. Raises ToolError on failure unless allow_fail is set.
 
@@ -61,11 +64,16 @@ def run(
     their results to stderr and exit non-zero by design, since they render no output.
     """
     argv = [str(c) for c in cmd]
+    wants_stdout = capture or stdin_text is not None
     proc = subprocess.run(
         argv,
         input=stdin_text,
-        capture_output=capture or stdin_text is not None,
+        stdout=subprocess.PIPE if wants_stdout else None,
+        # A model call takes minutes; capturing its stderr would hold back everything it
+        # says about itself until the end, leaving the terminal silent throughout.
+        stderr=None if passthrough_stderr else (subprocess.PIPE if wants_stdout else None),
         text=True,
+        env={**os.environ, **env} if env else None,
     )
     if proc.returncode != 0 and not allow_fail:
         tail = (proc.stderr or "").strip().splitlines()[-12:]
@@ -74,18 +82,24 @@ def run(
     return proc
 
 
-def brain(command: str, prompt: str) -> str:
+def brain(command: str, prompt: str, work: Path | None = None, step: str = "") -> str:
     """One call to the model: prompt on stdin, answer on stdout.
 
-    Everything the wrapper says about itself — which model actually answered, tokens,
-    cost, elapsed — comes back on stderr, and is copied into the episode's log rather
-    than scrolling past. Six months on, that is what tells you which model decided a
-    given edit, and what it cost. Without it the log names the wrapper and nothing else.
+    Its stderr is deliberately NOT captured. A montage call runs for minutes, and
+    capturing would hold back everything the wrapper says — which model is answering,
+    what it costs — until the call ends, leaving the terminal silent throughout.
+
+    The wrapper is told where the episode lives, so its trace of the exchange lands in
+    `work/brain/<step>/` next to everything else about that episode, and its lines go
+    into the same `log.md` as the ffmpeg commands. An edit and the model that decided it
+    stay in one place.
     """
-    proc = run([command, "-p"], stdin_text=prompt)
-    for line in (proc.stderr or "").splitlines():
-        if line.strip():
-            log(line.strip())
+    env = {}
+    if work is not None:
+        env["BRAIN_LOG"] = str(work / "brain" / (step or "appel"))
+    if _log_file is not None:
+        env["BRAIN_LOG_FILE"] = str(_log_file)
+    proc = run([command, "-p"], stdin_text=prompt, passthrough_stderr=True, env=env or None)
     return proc.stdout
 
 
