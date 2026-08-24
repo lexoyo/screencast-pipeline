@@ -151,7 +151,9 @@ def load(config_path: Path, overrides: dict[str, str] | None = None) -> Config:
     cfg = Config(
         whisper_bin=path_of("WHISPER_BIN"),
         whisper_model=path_of("WHISPER_MODEL"),
-        claude_bin=_get(raw, "CLAUDE_BIN", "claude"),
+        # expandvars : CLAUDE_BIN vaut soit un nom dans le PATH ("claude"), soit un
+        # chemin vers un wrapper, et celui-là s'écrit avec $HOME comme les autres.
+        claude_bin=os.path.expandvars(_get(raw, "CLAUDE_BIN", "claude")),
         melt_bin=_get(raw, "MELT_BIN", "melt-7"),
         sonorita_bin=_get(raw, "SONORITA_BIN", "sonorita-cli"),
         force_lang=_get(raw, "FORCE_LANG", ""),

@@ -48,6 +48,13 @@ def test_load_applies_defaults(tmp_path):
     assert cfg.claude_bin == "claude"
 
 
+def test_load_expands_home_in_the_brain_command(tmp_path):
+    # CLAUDE_BIN may point at a wrapper script; $HOME there must resolve like anywhere else
+    cfg = load(_write(tmp_path, MINIMAL + 'CLAUDE_BIN="$HOME/bin/brain.sh"\n'))
+    assert "$HOME" not in cfg.claude_bin
+    assert cfg.claude_bin.endswith("/bin/brain.sh")
+
+
 def test_load_expands_home(tmp_path):
     cfg = load(_write(tmp_path, MINIMAL))
     assert "$HOME" not in str(cfg.whisper_model)
