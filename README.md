@@ -108,6 +108,37 @@ It also drops fillers, false starts and repeats. Since the decision is textual, 
 narration is what makes the shots switch** — say what you are doing on screen, and it
 follows. You do not change how you film.
 
+## Another model than Claude
+
+Every model call goes through one setting, `CLAUDE_BIN`: the pipeline pipes the prompt to
+that command's stdin and reads the answer back from stdout. Anything honouring that
+contract can do the job. `scripts/brain.sh` is one such thing — same interface, served by
+**opencode** (so, OpenRouter) instead of Claude:
+
+```sh
+# config.env
+CLAUDE_BIN="$HOME/_/screencast-pipeline/scripts/brain.sh"
+```
+
+The model is not named in the file. With no `BRAIN_MODEL` set, opencode reuses whichever
+model you last picked in its TUI; to pin one for a run:
+
+```sh
+BRAIN_MODEL=openrouter/z-ai/glm-5.2 ./screencast run <ep>
+```
+
+Two details the wrapper exists for. It runs opencode in an **empty throwaway directory**,
+so the brain sees the prompt on stdin and nothing else — no `AGENTS.md`, no episode files.
+And it reads `--format json`, so the coloured `> build · …` banner opencode prints never
+ends up inside a `.srt`. The privacy line does not move: the rushes stay here, the
+transcript text is what goes out — to OpenRouter now rather than to Anthropic.
+
+**The five calls**, if you are choosing a model: the montage EDL (the demanding one —
+around 50k tokens of transcript in, structured JSON out), the subtitle translation, the
+transcript document and its links, the English metadata, and the editorial QC pass. The
+last two are short and forgiving; the montage is where a weak model breaks first. Measured
+through GLM-5.2 on a 16-minute episode, the QC pass answers in 9 s.
+
 ## Two outputs, on purpose
 
 `final.mp4` is a deterministic ffmpeg render — ship it. `project.mlt` carries **one track
