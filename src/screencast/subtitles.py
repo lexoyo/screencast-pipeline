@@ -13,7 +13,7 @@ from pathlib import Path
 from . import transcript as transcript_mod
 from .episode import Episode
 from .parsing import clean_srt
-from .shell import ffmpeg, log, run
+from .shell import brain, ffmpeg, log, run
 from .transcribe import whisper_json
 
 
@@ -45,9 +45,9 @@ def run_stage(ep: Episode, prompts_dir: Path, title: str = "") -> None:
     )
     (ep.work / "tr_full.txt").write_text(prompt)
 
-    proc = run([cfg.claude_bin, "-p"], stdin_text=prompt)
-    (ep.work / "tr_raw.srt").write_text(proc.stdout)
-    (ep.subs_dir / f"{target}.srt").write_text(clean_srt(proc.stdout))
+    answer = brain(cfg.claude_bin, prompt)
+    (ep.work / "tr_raw.srt").write_text(answer)
+    (ep.subs_dir / f"{target}.srt").write_text(clean_srt(answer))
     log(f"subs -> subs/{source_lang}.srt + subs/{target}.srt")
 
     # The readable document is built from the FINISHED subtitles, so its timestamps match

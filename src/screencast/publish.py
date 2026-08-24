@@ -16,7 +16,7 @@ from .parsing import extract_json_object, strip_code_fences
 
 # `run` is this module's stage function, so the shell one is renamed on import
 from .shell import log
-from .shell import run as run_command
+from .shell import brain
 from .timecode import remap_to_final, youtube_timecode
 from .timeline import Edl, load_kept
 from .transcript import links_section
@@ -72,8 +72,8 @@ def translate_metadata(ep: Episode, prompts_dir: Path, plan: Edl,
 
     log("metadata: translate to English")
     try:
-        proc = run_command([ep.cfg.claude_bin, "-p"], stdin_text=full)
-        data = json.loads(extract_json_object(strip_code_fences(proc.stdout)))
+        answer = brain(ep.cfg.claude_bin, full)
+        data = json.loads(extract_json_object(strip_code_fences(answer)))
     except Exception as exc:  # noqa: BLE001 — no English metadata must not cost the deliverable
         log(f"⚠ metadata EN skipped: {exc}")
         return None

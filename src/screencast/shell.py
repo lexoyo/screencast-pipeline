@@ -74,6 +74,21 @@ def run(
     return proc
 
 
+def brain(command: str, prompt: str) -> str:
+    """One call to the model: prompt on stdin, answer on stdout.
+
+    Everything the wrapper says about itself — which model actually answered, tokens,
+    cost, elapsed — comes back on stderr, and is copied into the episode's log rather
+    than scrolling past. Six months on, that is what tells you which model decided a
+    given edit, and what it cost. Without it the log names the wrapper and nothing else.
+    """
+    proc = run([command, "-p"], stdin_text=prompt)
+    for line in (proc.stderr or "").splitlines():
+        if line.strip():
+            log(line.strip())
+    return proc.stdout
+
+
 def ffprobe_duration(path: Path) -> float:
     """Duration in seconds, 0.0 if the file can't be probed."""
     proc = run(

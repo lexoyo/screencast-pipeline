@@ -16,6 +16,27 @@ parts: dict[str, str] = {}      # id -> texte ; un part réémis en streaming ne
 reasoning: dict[str, str] = {}  # idem pour le raisonnement : jamais renvoyé, mais mesuré
 errors: list[str] = []
 used = {"in": 0, "out": 0, "reasoning": 0, "cost": 0.0}
+served = ""  # le modèle qui a réellement répondu, tel qu'opencode le nomme
+
+def _find_model(node) -> str:
+    """Cherche modelID/providerID n'importe où dans un événement, sans en présumer la forme."""
+    if isinstance(node, dict):
+        if node.get("modelID"):
+            provider = node.get("providerID")
+            variant = node.get("variant")
+            name = f"{provider}/{node['modelID']}" if provider else str(node["modelID"])
+            return f"{name} ({variant})" if variant and variant != "default" else name
+        for value in node.values():
+            found = _find_model(value)
+            if found:
+                return found
+    elif isinstance(node, list):
+        for value in node:
+            found = _find_model(value)
+            if found:
+                return found
+    return ""
+
 
 for line in sys.stdin:
     line = line.strip()
@@ -25,6 +46,14 @@ for line in sys.stdin:
         event = json.loads(line)
     except json.JSONDecodeError:
         continue
+
+    if not served:
+        # Quand BRAIN_MODEL est vide, opencode prend le dernier modèle choisi dans son
+        # TUI — un état invisible depuis ici. Il le nomme dans ses événements : c'est la
+        # seule façon de savoir, six mois plus tard, qui a décidé un montage.
+        found = _find_model(event)
+        if found:
+            served = found
 
     if event.get("type") == "error":
         # opencode écrit ses erreurs dans le flux, pas sur stderr : sans ça, un modèle
@@ -48,7 +77,7 @@ for line in sys.stdin:
 answer = "".join(parts.values())
 thought = "".join(reasoning.values())
 
-note = f"{used['in']} jetons lus, {used['out']} écrits"
+note = f"{served or 'modèle inconnu'} — {used['in']} jetons lus, {used['out']} écrits"
 if used["reasoning"]:
     note += f", dont {used['reasoning']} de raisonnement"
 elif thought:

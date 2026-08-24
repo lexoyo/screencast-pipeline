@@ -13,7 +13,7 @@ from pathlib import Path
 from . import timeline as timeline_mod
 from .episode import Episode
 from .parsing import extract_json_object, strip_code_fences
-from .shell import ffprobe_duration, log, run
+from .shell import brain, ffprobe_duration, log, run
 
 
 def build_input(ep: Episode) -> dict:
@@ -41,10 +41,10 @@ def run_stage(ep: Episode, prompts_dir: Path) -> None:
     ep.brain_prompt.write_text(f"{prompt}\n\n## DATA\n{json.dumps(payload)}")
 
     log(f"montage brain: {ep.cfg.claude_bin} (transcript text only leaves the machine)")
-    proc = run([ep.cfg.claude_bin, "-p"], stdin_text=ep.brain_prompt.read_text())
-    ep.brain_raw.write_text(proc.stdout)
+    answer = brain(ep.cfg.claude_bin, ep.brain_prompt.read_text())
+    ep.brain_raw.write_text(answer)
 
-    data = parse_answer(proc.stdout)
+    data = parse_answer(answer)
     ep.edl.write_text(json.dumps(data, indent=2))
 
     parsed = timeline_mod.parse(data)

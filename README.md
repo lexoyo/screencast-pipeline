@@ -121,8 +121,9 @@ CLAUDE_BIN="$HOME/_/screencast-pipeline/scripts/brain.sh"
 ```
 
 The model is chosen right below it, as `BRAIN_MODEL` — `config.env` ships a few named
-and priced, one per commented line. Left commented, opencode reuses whichever model you
-last picked in its TUI. The environment wins over the file, to try one out for a single
+and priced, one per commented line. **Left commented, the model you picked in opencode's
+TUI is the one that answers**, and the episode's log names it, so choosing there and
+reading here stay in agreement. The environment wins over the file, to try one out for a single
 run:
 
 ```sh
@@ -144,9 +145,10 @@ sees the prompt on stdin and nothing else — no `AGENTS.md`, no episode files. 
 a `.srt`. The privacy line does not move: the rushes stay here, the
 transcript text is what goes out — to OpenRouter now rather than to Anthropic.
 
-Every call announces itself on stderr — the model that answered, the size of the prompt,
-the tokens it read and wrote, what it cost, and how long it took. That line reaches the
-terminal and the episode's log, so a montage is traceable to the model that decided it.
+Every call announces itself — the model that actually answered (read back from opencode's
+own events, not from what we asked for), the size of the prompt, the tokens read and
+written, the cost, the elapsed time. Those lines land in the terminal *and* in the
+episode's `work/log.md`, so a montage is traceable to the model that decided it.
 Set `BRAIN_LOG` to a directory and each call also leaves a folder behind: the prompt as
 sent, the answer as received, the provider's raw event stream, and a `meta.txt`. That is
 what lets you replay one prompt through two models and compare, rather than remember.

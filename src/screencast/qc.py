@@ -24,7 +24,7 @@ from .parsing import extract_json_object, strip_code_fences
 
 # `run` is this module's stage function, so the shell one is renamed on import
 from .shell import log
-from .shell import run as run_command
+from .shell import brain
 from .timecode import youtube_timecode
 
 # YouTube's own limits, as the upload form enforces them.
@@ -142,9 +142,9 @@ def editorial(claude_bin: str, prompts_dir: Path, payload: dict, work: Path) -> 
     full = f"{prompt}\n\n## DATA\n{json.dumps(payload, ensure_ascii=False)}"
     (work / "qc_prompt.txt").write_text(full)
     try:
-        proc = run_command([claude_bin, "-p"], stdin_text=full)
-        (work / "qc_raw.txt").write_text(proc.stdout)
-        data = json.loads(extract_json_object(strip_code_fences(proc.stdout)))
+        answer = brain(claude_bin, full)
+        (work / "qc_raw.txt").write_text(answer)
+        data = json.loads(extract_json_object(strip_code_fences(answer)))
     except Exception as exc:  # noqa: BLE001 — no review must not cost the deliverable
         log(f"⚠ QC éditorial indisponible: {exc}")
         return []

@@ -20,7 +20,7 @@ from pathlib import Path
 from . import links as links_mod
 from .episode import Episode
 from .parsing import extract_json_object, strip_code_fences
-from .shell import log, run
+from .shell import brain, log
 
 CUE = re.compile(
     r"(\d+)\s*\n(\d{2}):(\d{2}):(\d{2}),(\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2}),(\d{3})\s*\n(.*?)(?=\n\s*\n|\Z)",
@@ -90,9 +90,9 @@ def build(ep: Episode, prompts_dir: Path, title: str, language: str) -> dict:
     (ep.work / "transcript_prompt.txt").write_text(full)
 
     log(f"transcript: {len(cues)} cues → document + links")
-    proc = run([ep.cfg.claude_bin, "-p"], stdin_text=full)
-    (ep.work / "transcript_raw.txt").write_text(proc.stdout)
-    return json.loads(extract_json_object(strip_code_fences(proc.stdout)))
+    answer = brain(ep.cfg.claude_bin, full)
+    (ep.work / "transcript_raw.txt").write_text(answer)
+    return json.loads(extract_json_object(strip_code_fences(answer)))
 
 
 def verify_links(data: dict) -> dict:
