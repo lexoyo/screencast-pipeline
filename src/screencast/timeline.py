@@ -196,6 +196,52 @@ def _normalize_scene(value: Any) -> str:
     return scene if scene in SCENES else "large"
 
 
+def check(edl: Edl, duration: float, tol: float = 0.5) -> list[str]:
+    """What the prompt demands of a timeline, verified rather than assumed.
+
+    A model can return perfectly valid JSON describing an impossible edit. One did: a
+    timeline stopping at 403s of an 882s take, with a span jumping back from 877s to 43s.
+    Nothing downstream noticed — the render simply followed it and produced a video
+    missing half its content, with no error anywhere. So the arithmetic is checked here,
+    while the mistake is still cheap to see, and every problem is reported at once rather
+    than one per run.
+
+    `tol` absorbs the rounding a model does on timestamps; it is not a licence to drop
+    speech, which is why anything beyond it is fatal.
+    """
+    problems: list[str] = []
+    spans = edl.timeline
+    if not spans:
+        return ["the timeline is empty"]
+
+    if spans[0].start > tol:
+        problems.append(f"starts at {spans[0].start:.1f}s instead of 0")
+    if duration > 0 and abs(spans[-1].end - duration) > max(tol, 2.0):
+        problems.append(f"ends at {spans[-1].end:.1f}s, source is {duration:.1f}s")
+
+    negative = [s for s in spans if s.duration < 0]
+    if negative:
+        problems.append(f"{len(negative)} span(s) end before they start, e.g. "
+                        f"{negative[0].start:.1f} → {negative[0].end:.1f}")
+
+    holes = backwards = 0
+    first = ""
+    for previous, following in zip(spans, spans[1:]):
+        gap = following.start - previous.end
+        if abs(gap) <= tol:
+            continue
+        first = first or f"{previous.end:.1f} → {following.start:.1f}"
+        if gap < 0:
+            backwards += 1
+        else:
+            holes += 1
+    if holes:
+        problems.append(f"{holes} gap(s) between consecutive spans, first at {first}")
+    if backwards:
+        problems.append(f"{backwards} span(s) go back in time, first at {first}")
+    return problems
+
+
 def parse(data: dict[str, Any]) -> Edl:
     meta_raw = data.get("metadata") or {}
     chapters = [

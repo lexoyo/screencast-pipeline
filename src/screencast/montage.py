@@ -48,6 +48,17 @@ def run_stage(ep: Episode, prompts_dir: Path) -> None:
     ep.edl.write_text(json.dumps(data, indent=2))
 
     parsed = timeline_mod.parse(data)
+    problems = timeline_mod.check(parsed, payload["duration"])
+    if problems:
+        # The answer stays on disk: the point is to look at what the model actually said,
+        # and to be able to try another one without re-transcribing anything.
+        raise timeline_mod.TimelineError(
+            "the montage brain returned an incoherent timeline:\n  - "
+            + "\n  - ".join(problems)
+            + f"\nits answer is in {ep.brain_raw}. Another model in BRAIN_MODEL, or "
+            "`screencast run montage` again, is the way out."
+        )
+
     dropped = [span for span in parsed.timeline if span.drop]
     cut_seconds = sum(span.duration for span in dropped)
     log(
