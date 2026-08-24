@@ -37,8 +37,8 @@ Output schema (exact keys):
     "tags": ["...", "..."],                    // 6-12, lowercase
     "chapters": [ { "at": sec, "label": "..." } ], // `at` in ORIGINAL seconds; remapped later
     "tools": [ { "at": sec, "name": "...", "what": "...", "url": "https://..." } ],
-    "intro": { "title": "...", "subtitle": "..." },  // opening card. omit if not worth one.
-    "outro": { "title": "...", "cta": "..." },       // closing card. omit if not worth one.
+    "intro": { "title": "...", "subtitle": "..." },  // opening card. REQUIRED.
+    "outro": { "title": "...", "cta": "..." },       // closing card. REQUIRED.
     "jingle": { "intro": "...", "outro": "..." }     // the lines SUNG over those cards
   },
   "timeline": [
@@ -140,15 +140,20 @@ shown, and the choice of which is not yours.
   TITLE: a short sentence saying what the viewer is about to see, 4 to 8 words. Not a bare
   product name: "Jan" tells someone who lands on the video nothing, "Faire tourner un LLM
   en local, simplement" does. `intro.subtitle` adds the angle in a handful of words. `outro.cta` asks for ONE thing — a viewer who reached
-  the end acts on a single clear ask and on nothing at all if given a list. Omit either card
-  when the take does not warrant it rather than filling it with something empty.
+  the end acts on a single clear ask and on nothing at all if given a list.
+
+  **Both cards are REQUIRED. Never omit either one.** Every episode opens and closes the
+  same way; that is what makes a channel recognisable, and a video that starts cold on a
+  first sentence and stops dead on the last reads as a rush, not as an episode. If the take
+  seems not to warrant a card, that is not a reason to drop it — it is a reason to write a
+  better one from what was actually said.
 
 - **`jingle`** is what gets SUNG over those two cards, and it is not the text shown on them.
   One or two short lines each, in the spoken language, that scan when sung — think of a
   chorus, not a caption. They must be **specific to this video**: "Merci d'avoir regardé"
   sung identically on every episode stops being a signature and becomes a corporate jingle.
-  Name the subject, say what was just shown, land the promise. Omit a side if its card is
-  omitted.
+  Name the subject, say what was just shown, land the promise. Both sides are required,
+  like the cards they are sung over.
 
 - **metadata language** = the spoken language. Title sells the value, not "screencast of X".
 
