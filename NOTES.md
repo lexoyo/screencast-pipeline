@@ -39,9 +39,11 @@ coupés (18 s retirés). Titre et chapitres corrects, dix outils cités.
 
 Deux remarques d'Alex, et la seconde est la plus instructive de la journée.
 
-### 1. Aucune musique sur l'intro
+### 1. Aucun carton, ni au début ni à la fin — donc pas de musique
 
-L'EDL explique tout : `intro`, `outro` et `jingle` sont **absents**. Le prompt autorise à
+Alex constate à l'écran : pas de musique sur l'intro, **et pas de slide de fin non plus**.
+L'EDL explique les deux : `intro`, `outro` et `jingle` sont **absents** tous les trois.
+La vidéo démarre donc sur la première phrase et s'arrête sur la dernière, sans habillage. Le prompt autorise à
 omettre un carton « quand la prise ne le mérite pas », et Kimi a choisi de tout omettre —
 pas de carton, donc pas de jingle, donc pas de musique. Sonnet, lui, avait produit les
 trois. C'est une divergence de jugement entre modèles sur une consigne facultative, pas
