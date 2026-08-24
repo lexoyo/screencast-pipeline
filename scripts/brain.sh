@@ -39,6 +39,7 @@ MODEL="${BRAIN_MODEL:-$(from_config BRAIN_MODEL)}"
 API_BASE="${BRAIN_API_BASE:-$(from_config BRAIN_API_BASE)}"
 API_KEY="${BRAIN_API_KEY:-$(from_config BRAIN_API_KEY)}"
 LOGDIR="${BRAIN_LOG:-$(from_config BRAIN_LOG)}"
+VARIANT="${BRAIN_VARIANT:-$(from_config BRAIN_VARIANT)}"
 
 say() { echo "brain: $*" >&2; }   # stderr : traverse le pipeline sans polluer la réponse
 
@@ -111,6 +112,9 @@ AGENT
 
 model_arg=()
 [ -n "$MODEL" ] && model_arg=(-m "$MODEL")
+# L'effort de raisonnement. Le choix fait dans le TUI d'opencode ne vaut que pour le TUI :
+# ici il faut le dire explicitement, sinon c'est le réglage par défaut du fournisseur.
+[ -n "$VARIANT" ] && model_arg+=(--variant "$VARIANT")
 
 # --format json : la sortie normale est colorée et précédée d'un en-tête « > build · … »,
 # qui finirait dans un fichier .srt. Le flux complet est archivé tel quel quand BRAIN_LOG
