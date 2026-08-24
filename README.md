@@ -120,12 +120,18 @@ contract can do the job. `scripts/brain.sh` is one such thing — same interface
 CLAUDE_BIN="$HOME/_/screencast-pipeline/scripts/brain.sh"
 ```
 
-The model is not named in the file. With no `BRAIN_MODEL` set, opencode reuses whichever
-model you last picked in its TUI; to pin one for a run:
+The model is chosen right below it, as `BRAIN_MODEL` — `config.env` ships a few named
+and priced, one per commented line. Left commented, opencode reuses whichever model you
+last picked in its TUI. The environment wins over the file, to try one out for a single
+run:
 
 ```sh
 BRAIN_MODEL=openrouter/z-ai/glm-5.2 ./screencast run <ep>
 ```
+
+The id is `provider/model` — the `openrouter/` prefix included. Without it opencode
+answers `Unexpected server error`, which names nothing; the wrapper turns that into a
+sentence saying what the id should look like.
 
 Two details the wrapper exists for. It runs opencode in an **empty throwaway directory**,
 so the brain sees the prompt on stdin and nothing else — no `AGENTS.md`, no episode files.
