@@ -144,6 +144,13 @@ sees the prompt on stdin and nothing else — no `AGENTS.md`, no episode files. 
 a `.srt`. The privacy line does not move: the rushes stay here, the
 transcript text is what goes out — to OpenRouter now rather than to Anthropic.
 
+Every call announces itself on stderr — the model that answered, the size of the prompt,
+the tokens it read and wrote, what it cost, and how long it took. That line reaches the
+terminal and the episode's log, so a montage is traceable to the model that decided it.
+Set `BRAIN_LOG` to a directory and each call also leaves a folder behind: the prompt as
+sent, the answer as received, the provider's raw event stream, and a `meta.txt`. That is
+what lets you replay one prompt through two models and compare, rather than remember.
+
 **The five calls**, if you are choosing a model: the montage EDL (the demanding one —
 around 50k tokens of transcript in, structured JSON out), the subtitle translation, the
 transcript document and its links, the English metadata, and the editorial QC pass. The

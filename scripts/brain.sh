@@ -9,10 +9,13 @@
 # Deux chemins, selon ce qui est réglé dans config.env :
 #   BRAIN_API_BASE vide      -> opencode (donc les fournisseurs qu'il a en compte)
 #   BRAIN_API_BASE renseigné -> appel direct d'un endpoint OpenAI-compatible
-# Dans les deux cas BRAIN_MODEL nomme le modèle ; l'environnement l'emporte sur le
-# fichier, pour essayer un modèle le temps d'un run :
+# BRAIN_MODEL nomme le modèle ; l'environnement l'emporte sur le fichier, pour essayer
+# un modèle le temps d'un run :
 #   BRAIN_MODEL=openrouter/z-ai/glm-5.2 ./screencast run montage <ep>
+# BRAIN_LOG nomme un dossier où archiver chaque échange (prompt, réponse, flux brut).
 set -euo pipefail
+
+here="$(dirname "$(readlink -f "$0")")"
 
 # `-p` veut dire « prompt » chez claude et « password » chez opencode : on l'avale.
 for arg in "$@"; do
@@ -24,45 +27,52 @@ done
 
 # config.env n'est lu que par le Python du pipeline, jamais sourcé : sans ces lignes,
 # une valeur écrite là-bas n'arriverait pas jusqu'ici.
-config="$(dirname "$(dirname "$(readlink -f "$0")")")/config.env"
+config="$(dirname "$here")/config.env"
 from_config() {  # $1 = nom du réglage ; dernière occurrence, commentaire et guillemets ôtés
   [ -f "$config" ] || return 0
-  grep -E "^[[:space:]]*$1=" "$config" | tail -1 | cut -d= -f2- |
-    sed 's/#.*//; s/["'"'"']//g' | xargs || true
+  local raw
+  raw="$(grep -E "^[[:space:]]*$1=" "$config" | tail -1 | cut -d= -f2- |
+         sed 's/#.*//; s/["'"'"']//g' | xargs || true)"
+  echo "${raw//\$HOME/$HOME}"   # même expansion que côté Python, et elle seule
 }
 MODEL="${BRAIN_MODEL:-$(from_config BRAIN_MODEL)}"
 API_BASE="${BRAIN_API_BASE:-$(from_config BRAIN_API_BASE)}"
 API_KEY="${BRAIN_API_KEY:-$(from_config BRAIN_API_KEY)}"
+LOGDIR="${BRAIN_LOG:-$(from_config BRAIN_LOG)}"
+
+say() { echo "brain: $*" >&2; }   # stderr : traverse le pipeline sans polluer la réponse
 
 prompt="$(cat)"
+started=$(date +%s)
+
+# Un sous-dossier par appel : le prompt exact, la réponse exacte, le flux du fournisseur.
+# C'est ce qui permet de comparer deux modèles sur un prompt identique, et de savoir six
+# mois plus tard qui a écrit le titre d'une vidéo.
+archive=""
+if [ -n "$LOGDIR" ]; then
+  archive="$LOGDIR/$(date +%Y-%m-%d_%H%M%S)-$(echo "${MODEL:-defaut}" | tr '/' '_')"
+  mkdir -p "$archive"
+  printf '%s' "$prompt" > "$archive/prompt.txt"
+  { echo "date    $(date -Is)"; echo "modele  ${MODEL:-<défaut opencode>}"
+    echo "voie    ${API_BASE:-opencode}"; echo "prompt  ${#prompt} octets"; } > "$archive/meta.txt"
+fi
+say "${MODEL:-le modèle par défaut} — prompt $(( ${#prompt} / 1024 )) Ko${archive:+, trace dans $archive}"
+
+fin() {  # durée + rappel de l'archive, quel que soit le chemin pris
+  say "$(( $(date +%s) - started )) s"
+  [ -n "$archive" ] && { echo "duree   $(( $(date +%s) - started )) s" >> "$archive/meta.txt"; } || true
+}
 
 if [ -n "$API_BASE" ]; then
   # --- endpoint OpenAI-compatible, appelé directement -------------------------------
-  # Pas d'agent, pas d'outils, pas de session : une question, une réponse. Le prompt
-  # est passé en JSON par python plutôt que par une interpolation shell — il contient
-  # des guillemets, des accolades et des sauts de ligne par milliers.
-  python3 -c '
-import json, os, sys, urllib.request
-
-base, key, model, prompt = sys.argv[1].rstrip("/"), sys.argv[2], sys.argv[3], sys.stdin.read()
-body = json.dumps({"model": model, "messages": [{"role": "user", "content": prompt}]}).encode()
-req = urllib.request.Request(f"{base}/chat/completions", data=body,
-                             headers={"Content-Type": "application/json",
-                                      "Authorization": f"Bearer {key}"})
-try:
-    with urllib.request.urlopen(req, timeout=900) as resp:
-        data = json.load(resp)
-except Exception as exc:
-    detail = getattr(exc, "read", lambda: b"")()[:400].decode(errors="replace")
-    print(f"brain.sh: {base} a refusé la requête ({exc}) {detail}", file=sys.stderr)
-    sys.exit(1)
-answer = (data.get("choices") or [{}])[0].get("message", {}).get("content") or ""
-if not answer.strip():
-    print(f"brain.sh: réponse vide de {model} ({json.dumps(data)[:300]})", file=sys.stderr)
-    sys.exit(1)
-sys.stdout.write(answer)
-' "$API_BASE" "$API_KEY" "$MODEL" <<< "$prompt"
-  exit $?
+  # Pas d'agent, pas d'outils, pas de session : une question, une réponse.
+  set +e
+  python3 "$here/brain-http.py" "$API_BASE" "$API_KEY" "$MODEL" <<< "$prompt" \
+    | tee ${archive:+"$archive/reponse.txt"}
+  code=${PIPESTATUS[0]}
+  set -e
+  fin
+  exit "$code"
 fi
 
 # --- opencode ----------------------------------------------------------------------
@@ -103,36 +113,19 @@ model_arg=()
 [ -n "$MODEL" ] && model_arg=(-m "$MODEL")
 
 # --format json : la sortie normale est colorée et précédée d'un en-tête « > build · … »,
-# qui finirait dans un fichier .srt. Ici on ne garde que le texte de la réponse.
+# qui finirait dans un fichier .srt. Le flux complet est archivé tel quel quand BRAIN_LOG
+# est réglé — c'est là que se lisent les erreurs du fournisseur et le détail des jetons.
+# Les logs d'opencode lui-même : dans l'archive quand il y en a une, à l'écran sinon.
+oclog="${archive:+$archive/opencode.log}"
+oclog="${oclog:-/dev/stderr}"
+
+set +e
 opencode run --dir "$workdir" --agent brain "${model_arg[@]}" --format json <<< "$prompt" \
-  | python3 -c '
-import json, sys
-
-parts = {}   # id -> texte ; un part émis plusieurs fois (streaming) ne compte qu une fois
-errors = []
-for line in sys.stdin:
-    line = line.strip()
-    if not line:
-        continue
-    try:
-        event = json.loads(line)
-    except json.JSONDecodeError:
-        continue
-    if event.get("type") == "error":
-        # opencode ecrit ses erreurs dans le flux, pas sur stderr : sans ca, un modele
-        # inconnu ou un quota depasse ressemble a une reponse vide.
-        detail = (event.get("error") or {}).get("data", {}).get("message", "?")
-        errors.append(str(detail))
-        continue
-    part = event.get("part") or {}
-    if event.get("type") == "text" and part.get("type") == "text":
-        parts[part.get("id")] = part.get("text", "")
-
-answer = "".join(parts.values())
-if not answer.strip():
-    hint = " ; ".join(errors) or "reponse vide"
-    print(f"brain.sh: opencode n a rien renvoye ({hint}). Le modele doit s ecrire "
-          f"provider/modele, p.ex. openrouter/z-ai/glm-5.2.", file=sys.stderr)
-    sys.exit(1)
-sys.stdout.write(answer)
-'
+    2> "$oclog" \
+  | tee ${archive:+"$archive/flux-opencode.jsonl"} \
+  | python3 "$here/brain-parse.py" \
+  | tee ${archive:+"$archive/reponse.txt"}
+code=${PIPESTATUS[2]}
+set -e
+fin
+exit "$code"
