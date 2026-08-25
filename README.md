@@ -203,4 +203,4 @@ rush, never by mocking a subprocess.
 
 ## License
 
-Private. © Alex Hoyau.
+[MIT](LICENSE). © 2026 Alex Hoyau.
