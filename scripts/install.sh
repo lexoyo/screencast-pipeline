@@ -26,6 +26,15 @@ WHISPER_DIR="${WHISPER_DIR:-/opt/whisper.cpp}"
 MODEL_DIR="${MODEL_DIR:-$HOME/models/whisper}"
 MODELS="${MODELS:-large-v3-turbo small}"   # turbo = celui du pipeline, small = secours CPU
 
+# Le modèle de vision qui repère le curseur dans une image du rush. Sa position part
+# ensuite dans segments.json, à côté du texte, et c'est le brain du montage qui en déduit
+# la zone à cadrer — le petit modèle voit, le gros comprend.
+# llamafile et pas Ollama : un fichier exécutable, aucun démon, rien à enregistrer sur la
+# machine (Alex, 09/08/2026).
+VLM_DIR="${VLM_DIR:-$HOME/models/vlm}"
+VLM_FILE="${VLM_FILE:-moondream2-q5km.llamafile}"
+VLM_URL="${VLM_URL:-https://huggingface.co/cjpais/moondream2-llamafile/resolve/main/moondream2-q5km-050824.llamafile}"
+
 ok(){ printf '  \033[32m✓\033[0m %-22s %s\n' "$1" "${2:-}"; }
 missing(){ printf '  \033[31m✗\033[0m %-22s %s\n' "$1" "${2:-}"; }
 note(){ printf '  \033[33m!\033[0m %-22s %s\n' "$1" "${2:-}"; }
@@ -90,6 +99,9 @@ for model in $MODELS; do
   else missing "model $model" "→ downloaded into $MODEL_DIR"; fi
 done
 
+if [ -x "$VLM_DIR/$VLM_FILE" ]; then ok "moondream2 (vision)" "$VLM_DIR/$VLM_FILE"
+else missing "moondream2 (vision)" "→ downloaded into $VLM_DIR (1.9 GB)"; fi
+
 title "Not installed here — checked only"
 for tool in claude sonorita-cli; do
   if command -v "$tool" >/dev/null 2>&1; then ok "$tool" "$(command -v "$tool")"
@@ -101,8 +113,11 @@ NEEDS_WHISPER=0
 [ -x "$WHISPER_DIR/build/bin/whisper-cli" ] || NEEDS_WHISPER=1
 NEEDS_MODELS=0
 for model in $MODELS; do [ -f "$MODEL_DIR/ggml-$model.bin" ] || NEEDS_MODELS=1; done
+NEEDS_VLM=0
+[ -x "$VLM_DIR/$VLM_FILE" ] || NEEDS_VLM=1
 
-if [ ${#TO_INSTALL[@]} -eq 0 ] && [ $NEEDS_WHISPER -eq 0 ] && [ $NEEDS_MODELS -eq 0 ]; then
+if [ ${#TO_INSTALL[@]} -eq 0 ] && [ $NEEDS_WHISPER -eq 0 ] && [ $NEEDS_MODELS -eq 0 ] \
+   && [ $NEEDS_VLM -eq 0 ]; then
   printf '\n\033[32mEverything is in place.\033[0m Run ./screencast doctor to see the config too.\n'
   exit 0
 fi
@@ -111,6 +126,7 @@ printf '\n\033[1mWhat would be done\033[0m\n'
 [ ${#TO_INSTALL[@]} -gt 0 ] && printf '  sudo dnf install %s\n' "${TO_INSTALL[*]}"
 [ $NEEDS_WHISPER -eq 1 ] && printf '  build whisper.cpp into %s (needs git, cmake, gcc-c++)\n' "$WHISPER_DIR"
 [ $NEEDS_MODELS -eq 1 ] && printf '  download the whisper models into %s (~600 MB)\n' "$MODEL_DIR"
+[ $NEEDS_VLM -eq 1 ] && printf '  download %s into %s (1.9 GB)\n' "$VLM_FILE" "$VLM_DIR"
 
 if [ $CHECK_ONLY -eq 1 ]; then
   printf '\n(--check: nothing was changed)\n'
@@ -201,6 +217,13 @@ if [ $NEEDS_MODELS -eq 1 ]; then
     curl -fL --progress-bar -o "$target" \
       "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-$model.bin"
   done
+fi
+
+if [ $NEEDS_VLM -eq 1 ]; then
+  mkdir -p "$VLM_DIR"
+  echo "downloading $VLM_FILE (1.9 GB)"
+  curl -fL --progress-bar -o "$VLM_DIR/$VLM_FILE" "$VLM_URL"
+  chmod +x "$VLM_DIR/$VLM_FILE"
 fi
 
 printf '\n\033[32mDone.\033[0m Now run: ./screencast doctor\n'
