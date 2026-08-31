@@ -370,3 +370,18 @@ def test_without_a_channel_line_the_episode_keeps_the_last_word():
     layout = build(plan, plan.kept, channel=CHANNEL)
     outro = next(c for c in layout.cards if c.kind == "outro")
     assert outro.values["title"] == "Des LLM en local"
+
+
+def test_the_plan_carries_the_channel_palette():
+    # slides.render has always taken a theme and nothing ever passed one: every channel
+    # rendered in the default palette, and the first Silex video came out in the personal
+    # channel's navy with the Silex wording on it
+    plan = _plan(BODY)
+    layout = build(plan, plan.kept, channel={"name": "Silex", "theme": "silex"})
+    assert layout.theme == "silex"
+
+
+def test_a_channel_without_a_theme_keeps_the_default():
+    plan = _plan(BODY)
+    assert build(plan, plan.kept, channel={"name": "X"}).theme == "alexhoyau"
+    assert build(plan, plan.kept).theme == "alexhoyau"

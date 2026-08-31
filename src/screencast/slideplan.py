@@ -56,6 +56,9 @@ OUTRO_SECONDS = 4.0
 LIST_CARD_SECONDS = 3.5
 
 
+DEFAULT_THEME = "alexhoyau"
+
+
 @dataclass(frozen=True)
 class Card:
     """A full-frame slide occupying its own stretch of the timeline."""
@@ -94,6 +97,14 @@ class Overlay:
 class SlidePlan:
     cards: list[Card] = field(default_factory=list)
     overlays: list[Overlay] = field(default_factory=list)
+    theme: str = DEFAULT_THEME
+    """The channel's palette, carried here because the plan is what the renderers read.
+
+    It used to stop at the channel file: `slides.render` has always taken a `theme`, and
+    nothing ever passed one, so every channel rendered in the default palette. Invisible
+    while there was one channel whose name happened to be the default — the first Silex
+    video came out in the personal channel's navy, with the Silex wording on it."""
+
     body_offset: float = 0.0
     """How much the body was pushed back by an intro — every chapter shifts by this."""
 
@@ -310,6 +321,7 @@ def build(
     return SlidePlan(
         cards=cards,
         overlays=overlays,
+        theme=(channel or {}).get("theme") or DEFAULT_THEME,
         body_offset=body_offset,
         total_added=sum(card.duration for card in cards),
     )

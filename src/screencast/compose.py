@@ -18,7 +18,7 @@ from pathlib import Path
 from . import music, slides
 from .episode import Episode
 from .shell import ffmpeg, ffprobe_duration, log, loudness_lufs
-from .slideplan import Card, Overlay, SlidePlan
+from .slideplan import DEFAULT_THEME, Card, Overlay, SlidePlan
 
 # What a list card does to the picture behind it. The blur is what makes the text readable
 # and shifts attention onto it; without it the card competes with a moving shot.
@@ -36,11 +36,13 @@ def render_all(ep: Episode, layout: SlidePlan) -> tuple[list[Path], list[Path]]:
     """
     ep.slidedir.mkdir(parents=True, exist_ok=True)
     cards = [
-        slides.render(card.kind, card.values, ep.slidedir / f"card{index:02d}.png")
+        slides.render(card.kind, card.values, ep.slidedir / f"card{index:02d}.png",
+                      theme=layout.theme)
         for index, card in enumerate(layout.cards)
     ]
     overlays = [
-        slides.render(overlay.kind, _overlay_values(overlay), ep.slidedir / f"overlay{index:02d}.png")
+        slides.render(overlay.kind, _overlay_values(overlay),
+                      ep.slidedir / f"overlay{index:02d}.png", theme=layout.theme)
         for index, overlay in enumerate(layout.overlays)
     ]
     return cards, overlays
@@ -57,10 +59,12 @@ def _overlay_values(overlay: Overlay) -> dict[str, str]:
     return values
 
 
-def render_card(ep: Episode, card: Card, index: int, *, audio: Path | None = None) -> Path:
+def render_card(ep: Episode, card: Card, index: int, *, audio: Path | None = None,
+                theme: str = DEFAULT_THEME) -> Path:
     """Turn a card into a video segment, silent unless music is supplied."""
     cfg = ep.cfg
-    image = slides.render(card.kind, card.values, ep.slidedir / f"card{index:02d}.png")
+    image = slides.render(card.kind, card.values, ep.slidedir / f"card{index:02d}.png",
+                          theme=theme)
     out = ep.segdir / f"card{index:02d}.mp4"
 
     args: list[str | Path] = ["-loop", "1", "-t", str(card.duration), "-i", image]

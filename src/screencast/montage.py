@@ -10,10 +10,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from . import lang
 from . import timeline as timeline_mod
 from .episode import Episode
 from .parsing import extract_json_object, strip_code_fences
-from .shell import brain, ffprobe_duration, log, run
+from .shell import brain, ffprobe_duration, log
 
 
 def build_input(ep: Episode) -> dict:
@@ -39,6 +40,14 @@ def parse_answer(raw: str) -> dict:
     return json.loads(extract_json_object(strip_code_fences(raw)))
 
 
+LANGUAGE_NOTE = """## THE SPOKEN LANGUAGE OF THIS SHOOT IS {NAME} ({CODE})
+
+EVERY piece of text you write is in {NAME}, with no exception: the title, the description,
+the tags, the chapter labels, the intro and outro cards, and the sung jingle lines. The
+cards are burnt into the picture — a card in another language than the audio cannot be
+fixed without re-rendering the video.
+"""
+
 SCREEN_ONLY_NOTE = """## NO CAMERA ON THIS SHOOT
 
 There is no camera rush: the only shot available is `ecran`. Set `"scene": "ecran"` on
@@ -52,6 +61,11 @@ def run_stage(ep: Episode, prompts_dir: Path) -> None:
 
     payload = build_input(ep)
     prompt = (prompts_dir / "montage.md").read_text()
+    # The harness knows the language; montage.md only says "the spoken language" and lets
+    # the model infer it. On an English shoot it produced English metadata and French
+    # cards in the same answer — and cards are burnt into the picture.
+    spoken = lang.spoken(ep.language())
+    prompt = LANGUAGE_NOTE.replace("{NAME}", lang.name(spoken)).replace("{CODE}", spoken) + prompt
     if not ep.has_face:
         # Prepended, not appended: montage.md ends on "Output the JSON object and nothing
         # else", and that instruction is worth keeping as the last thing the model reads.

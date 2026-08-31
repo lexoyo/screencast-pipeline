@@ -118,7 +118,7 @@ def run(ep: Episode, plan: Edl, layout: SlidePlan | None = None) -> None:
         # timeline: the two disagreed and the outro was rendered twice, once as card01 and
         # once as card28, from the same values.
         for card in intro:
-            path = compose.render_card(ep, card, layout.cards.index(card))
+            path = compose.render_card(ep, card, layout.cards.index(card), theme=layout.theme)
             # after_index is the kept segment the card follows — the spoken summary, in
             # practice. `parts` holds one entry per kept segment in order, so inserting
             # just after it puts the card exactly where the voice stops. None = the old
@@ -127,7 +127,7 @@ def run(ep: Episode, plan: Edl, layout: SlidePlan | None = None) -> None:
             log(f"  card {card.kind} ({card.duration:.0f}s) after segment {position}")
             parts.insert(position, f"file '{path.as_posix()}'")
         for card in outro:
-            path = compose.render_card(ep, card, layout.cards.index(card))
+            path = compose.render_card(ep, card, layout.cards.index(card), theme=layout.theme)
             log(f"  card {card.kind} ({card.duration:.0f}s)")
             parts.append(f"file '{path.as_posix()}'")
 
