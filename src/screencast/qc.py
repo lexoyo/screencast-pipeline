@@ -20,11 +20,11 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import lang
 from .parsing import extract_json_object, strip_code_fences
 
 # `run` is this module's stage function, so the shell one is renamed on import
-from .shell import log
-from .shell import brain
+from .shell import brain, log
 from .timecode import youtube_timecode
 
 # YouTube's own limits, as the upload form enforces them.
@@ -211,7 +211,8 @@ def run(ep, plan, prompts_dir: Path) -> None:
 
     issues = mechanical(meta.title, meta.description, list(meta.tags), rows, links, duration)
 
-    english_file = ep.work / "meta_en.json"
+    spoken = lang.resolve(ep.language(), plan.language)
+    translated_file = ep.work / f"meta_{lang.target(spoken)}.json"
     transcripts = sorted(deliverable.glob("transcript.*.md"))
     excerpt = transcripts[0].read_text()[:TRANSCRIPT_BUDGET] if transcripts else ""
     log("QC: relecture par un process séparé (règle #2)")
@@ -223,7 +224,9 @@ def run(ep, plan, prompts_dir: Path) -> None:
             "description": meta.description,
             "tags": list(meta.tags),
             "chapters": [{"at": youtube_timecode(at), "label": label} for at, label in rows],
-            "english": json.loads(english_file.read_text()) if english_file.is_file() else None,
+            "translation": (
+                json.loads(translated_file.read_text()) if translated_file.is_file() else None
+            ),
             "transcript_excerpt": excerpt,
             "duration_seconds": round(duration),
         },

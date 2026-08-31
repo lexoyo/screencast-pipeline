@@ -73,8 +73,51 @@ You record **two frame-synced files** in one OBS take:
 | `project.mlt` | an editable 3-track Shotcut project |
 | `final.<lang>.srt` | subtitles, native + translation |
 | `metadata.txt` | title, description, tags, timestamped chapters |
+| `metadata.<lang>.txt` | the same, translated, for the platform's per-language fields |
 
 Nothing is uploaded. Ever. You publish by hand.
+
+## Shooting for someone else, or in another language
+
+Two flags, both optional, both per run — nothing to edit and remember to edit back:
+
+```bash
+./screencast --channel silex --lang en new    # a Silex documentation screencast
+```
+
+`--channel` picks the identity painted on the cards: the name, the handle, the wording,
+the theme. One JSON file per channel in `src/screencast/channels/`, with its palette in
+`src/screencast/themes/`. `alexhoyau` is the default; `silex` shoots the official
+documentation, on the docs' own colours.
+
+## A shoot with no camera
+
+The camera rush feeds the wide and close-up shots. A documentation screencast usually
+wants neither — the screen already carries the webcam in a corner, baked in by OBS — so it
+is optional:
+
+```bash
+./screencast --no-cam new
+./screencast --cam "/path/to/that take cam.mkv" new   # pair a specific one
+```
+
+Without a camera every segment is the screen shot, the face correction is skipped, and the
+Shotcut project keeps its empty wide/close-up tracks so the timeline reads the same.
+
+Shooting without a camera is **recorded in the episode**, so a later `run` can tell it
+apart from a camera rush that went missing — an archived file or an unmounted drive stops
+the run instead of quietly producing a screen-only video.
+
+`new` pairs the screen rush with the camera file **closest to it in time**, and only when
+the two were written within five minutes of each other. Further apart, they are almost
+certainly different takes — the camera folder keeps every past shoot — so it stops and
+asks rather than putting another day's face onto this video.
+
+`--lang` sets the spoken language for that run, overriding `FORCE_LANG` from config.env
+(`auto` hands the choice back to whisper). It decides more than transcription: the
+deliverable always ships the spoken language **plus one translation** — subtitles,
+transcript and metadata — and which one that is follows from it. FR shoots translate to
+EN, EN shoots to FR.
 
 ## The eight stages
 

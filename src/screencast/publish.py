@@ -10,16 +10,17 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from . import upload
+from . import lang, upload
 from .episode import Episode
 from .parsing import extract_json_object, strip_code_fences
 
 # `run` is this module's stage function, so the shell one is renamed on import
-from .shell import log
-from .shell import brain
+from .shell import brain, log
 from .timecode import remap_to_final, youtube_timecode
 from .timeline import Edl, load_kept
 from .transcript import links_section
+
+FALLBACK_SPOKEN = lang.FALLBACK
 
 
 def chapter_rows(plan: Edl, kept: list[dict]) -> list[tuple[float, str]]:
@@ -36,10 +37,11 @@ def chapter_rows(plan: Edl, kept: list[dict]) -> list[tuple[float, str]]:
     return rows
 
 
-def metadata_text(plan: Edl, rows: list[tuple[float, str]], links: list[dict] | None = None) -> str:
+def metadata_text(plan: Edl, rows: list[tuple[float, str]], links: list[dict] | None = None,
+                  spoken: str = FALLBACK_SPOKEN) -> str:
     meta = plan.metadata
     lines = [meta.title, "", meta.description, ""]
-    block = links_section(links or [])
+    block = links_section(links or [], label=lang.links_label(spoken))
     if block:
         lines += [block, ""]
     lines += ["Tags: " + ", ".join(meta.tags), "", "Chapters:"]
@@ -48,15 +50,16 @@ def metadata_text(plan: Edl, rows: list[tuple[float, str]], links: list[dict] | 
 
 
 def translate_metadata(ep: Episode, prompts_dir: Path, plan: Edl,
-                       rows: list[tuple[float, str]]) -> dict | None:
-    """Title, description, tags and chapter labels in English.
+                       rows: list[tuple[float, str]], target: str) -> dict | None:
+    """Title, description, tags and chapter labels in the deliverable's other language.
 
-    YouTube takes a translated title and description per language, and a viewer landing
-    from an English search reads those rather than the subtitles. Cached in work/, because
-    re-packaging a deliverable should not cost another model call — nor produce a second,
-    slightly different translation of a video already published under the first.
+    YouTube and PeerTube both take a translated title and description per language, and a
+    viewer landing from a search in that language reads those rather than the subtitles.
+    Cached in work/, because re-packaging a deliverable should not cost another model call
+    — nor produce a second, slightly different translation of a video already published
+    under the first.
     """
-    cache = ep.work / "meta_en.json"
+    cache = ep.work / f"meta_{target}.json"
     if cache.is_file():
         return json.loads(cache.read_text())
 
@@ -67,31 +70,32 @@ def translate_metadata(ep: Episode, prompts_dir: Path, plan: Edl,
         "tags": list(meta.tags),
         "chapters": [label for _, label in rows],
     }
-    prompt = (prompts_dir / "metadata-translate.md").read_text()
+    prompt = (prompts_dir / "metadata-translate.md").read_text().replace("{DST}", lang.name(target))
     full = f"{prompt}\n\n## DATA\n{json.dumps(payload, ensure_ascii=False)}"
 
-    log("metadata: translate to English")
+    log(f"metadata: translate to {lang.name(target)}")
     try:
-        answer = brain(ep.cfg.claude_bin, full, ep.work, "metadonnees-en")
+        answer = brain(ep.cfg.claude_bin, full, ep.work, f"metadonnees-{target}")
         data = json.loads(extract_json_object(strip_code_fences(answer)))
-    except Exception as exc:  # noqa: BLE001 — no English metadata must not cost the deliverable
-        log(f"⚠ metadata EN skipped: {exc}")
+    except Exception as exc:  # noqa: BLE001 — a missing translation must not cost the deliverable
+        log(f"⚠ metadata {target.upper()} skipped: {exc}")
         return None
 
     labels = data.get("chapters") or []
     if len(labels) != len(rows):
         # Chapters are matched to timestamps by position; a short list would shift them all.
-        log(f"⚠ metadata EN: {len(labels)} chapitres traduits pour {len(rows)} — chapitres FR gardés")
+        log(f"⚠ metadata {target.upper()}: {len(labels)} chapitres traduits pour "
+            f"{len(rows)} — chapitres d'origine gardés")
         data["chapters"] = [label for _, label in rows]
     cache.write_text(json.dumps(data, ensure_ascii=False, indent=2))
     return data
 
 
-def english_metadata_text(data: dict, rows: list[tuple[float, str]],
-                          links: list[dict] | None = None) -> str:
-    """The same file as metadata.txt, in English, so it can be pasted as-is."""
+def translated_metadata_text(data: dict, rows: list[tuple[float, str]],
+                             links: list[dict] | None = None, target: str = "en") -> str:
+    """The same file as metadata.txt, translated, so it can be pasted as-is."""
     lines = [data.get("title", ""), "", data.get("description", ""), ""]
-    block = links_section(links or [], label="Projects mentioned")
+    block = links_section(links or [], label=lang.links_label(target))
     if block:
         lines += [block, ""]
     lines += ["Tags: " + ", ".join(data.get("tags") or []), "", "Chapters:"]
@@ -111,13 +115,28 @@ def run(ep: Episode, plan: Edl, prompts_dir: Path | None = None) -> None:
     rows = chapter_rows(plan, kept)
     links_file = ep.work / "links.json"
     links = json.loads(links_file.read_text()) if links_file.is_file() else []
-    (deliverable / "metadata.txt").write_text(metadata_text(plan, rows, links))
+    # What was actually spoken, according to the harness rather than the montage model.
+    spoken = lang.resolve(ep.language(), plan.language)
+    (deliverable / "metadata.txt").write_text(metadata_text(plan, rows, links, spoken))
 
-    # The channel is FR first, EN second: the subtitles were already translated, and a
-    # viewer arriving from an English search reads the title and description, not the srt.
-    english = translate_metadata(ep, prompts_dir, plan, rows) if prompts_dir else None
-    if english:
-        (deliverable / "metadata.en.txt").write_text(english_metadata_text(english, rows, links))
+    # Two languages per deliverable, the spoken one and its translation: the subtitles were
+    # already translated, and a viewer arriving from a search in the other language reads
+    # the title and description, not the srt. Which language that is depends on the video —
+    # the personal channel shoots FR, the Silex docs shoot EN.
+    target = lang.target(spoken)
+    # A previous run may have shipped the other pair (--lang is meant to change between
+    # runs on the same episode): a stale metadata.<lang>.txt would otherwise stay in the
+    # deliverable and be the one UPLOAD.md points at.
+    for stale in deliverable.glob("metadata.*.txt"):
+        if stale.name != f"metadata.{target}.txt":
+            stale.unlink()
+    translated = translate_metadata(ep, prompts_dir, plan, rows, target) if prompts_dir else None
+    translated_name = ""
+    if translated:
+        translated_name = f"metadata.{target}.txt"
+        (deliverable / translated_name).write_text(
+            translated_metadata_text(translated, rows, links, target)
+        )
 
     for document in sorted(ep.deliverable.glob("transcript.*.md")):
         document.touch()  # already written by the subtitles stage; kept in the deliverable
@@ -141,7 +160,8 @@ def run(ep: Episode, plan: Edl, prompts_dir: Path | None = None) -> None:
             deliverable,
             title=plan.metadata.title,
             chapters=[(youtube_timecode(at), label) for at, label in rows],
-            language=plan.language,
+            language=spoken,
+            translated=translated_name,
         )
     )
 
@@ -150,7 +170,8 @@ def run(ep: Episode, plan: Edl, prompts_dir: Path | None = None) -> None:
     log("  final.mp4      vidéo montée HD")
     log("  final.*.srt    sous-titres (natif + traduction) — chargés seuls par VLC/mpv")
     log("  metadata.txt   titre / description / tags / chapitres")
-    log("  metadata.en.txt  les mêmes, en anglais (YouTube les accepte par langue)")
+    if translated_name:
+        log(f"  {translated_name}  les mêmes, traduits (YouTube et PeerTube les acceptent par langue)")
     log("  project.mlt    projet Shotcut éditable (pointe vers les rushes du dossier parent)")
     log("  transcript.*.md  le transcript rédigé, liens vérifiés (fr + en)")
     log("  UPLOAD.md      la marche à suivre pour publier, pas à pas")

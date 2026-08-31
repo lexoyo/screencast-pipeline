@@ -95,6 +95,22 @@ def test_the_prompt_is_capped():
     assert len(as_prompt(long_terms, limit=220)) <= 220
 
 
+def test_the_lead_in_follows_the_spoken_language():
+    # whisper conditions on the prompt as if it preceded the audio: a French sentence over
+    # an English take primes the decoder for the wrong language
+    assert as_prompt(TERMS, language="en").startswith("This is about ")
+    assert as_prompt(TERMS, language="fr").startswith("On parle ici de ")
+
+
+def test_an_unknown_language_gets_no_lead_in():
+    # including "auto": priming in the wrong language is the mistake being avoided, and a
+    # default would only pick which shoots get it
+    for unknown in ("pt", "auto"):
+        prompt = as_prompt(TERMS, language=unknown)
+        assert prompt.startswith("Claude Code")
+        assert "This is about" not in prompt
+
+
 def test_an_empty_glossary_gives_no_prompt():
     assert as_prompt({}) == ""
 

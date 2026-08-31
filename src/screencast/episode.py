@@ -50,6 +50,37 @@ class Episode:
         return self._rush(self.cfg.face_file, "face")
 
     @property
+    def screen_only(self) -> Path:
+        """Marker written when the episode is created without a camera rush."""
+        return self.root / ".screen-only"
+
+    @property
+    def has_face(self) -> bool:
+        """Whether this shoot has a clean camera rush at all.
+
+        A documentation screencast often has none: no camera, or the OBS Source Record
+        filter was off. Everything the camera feeds — the wide and close-up shots, the
+        face correction, the startup offset — then has nothing to work from, and the video
+        is one continuous `ecran` shot. That is a normal shoot, not a failure: the screen
+        rush already carries the webcam in a corner, baked in by OBS.
+        """
+        return not self.screen_only.is_file() and self.face.is_file()
+
+    def need_face(self) -> None:
+        """Stop unless the camera situation is the one this episode was created with.
+
+        A missing camera file answers "is there a camera?" with "no" exactly as a
+        screen-only shoot does — and those are not the same thing. One is a decision, taken
+        once and recorded here; the other is a rush that was moved or archived, a drive
+        that is not mounted, a Source Record filter left off. Without this distinction a
+        normal two-camera shoot whose rush went missing would render as a screen-only video
+        and report success, the failure showing up as one line in a long log.
+        """
+        if self.screen_only.is_file():
+            return
+        self.need(self.face, "the clean webcam rush — or re-create the episode with --no-cam")
+
+    @property
     def mic(self) -> Path:
         """Whichever rush carries the microphone track."""
         return self.face if self.cfg.mic_from_face else self.screen
@@ -148,8 +179,8 @@ class Episode:
         return path
 
     def language(self, default: str = "auto") -> str:
-        if self.cfg.force_lang:
-            return self.cfg.force_lang
+        if self.cfg.forced_lang:
+            return self.cfg.forced_lang
         if self.lang_file.is_file():
             return self.lang_file.read_text().strip() or default
         return default

@@ -52,8 +52,24 @@ def load(path: Path | None = None) -> dict[str, list[str]]:
     return parse(path.read_text()) if path.is_file() else {}
 
 
-def as_prompt(terms: dict[str, list[str]] | list[str], limit: int = 220) -> str:
-    """The initial prompt handed to whisper.
+LEAD_IN = {
+    "fr": "On parle ici de ",
+    "en": "This is about ",
+}
+"""The sentence the names are hung on, per spoken language.
+
+Whisper conditions on the prompt as if it were the text preceding the audio, so the
+sentence itself is a language signal. A French lead-in over an English take primes the
+decoder for the wrong language — and with `-l auto`, can decide the detection outright.
+A language that is not listed — including an undetected one — gets NO lead-in at all,
+just the names. Priming with the wrong language is the mistake being avoided here; picking
+a default would only choose which shoots get it.
+"""
+
+
+def as_prompt(terms: dict[str, list[str]] | list[str], limit: int = 220,
+              language: str = "fr") -> str:
+    """The initial prompt handed to whisper, in the language being spoken.
 
     A prompt, not a list: whisper conditions on it as if it were the text preceding the
     audio, so a sentence primes the decoder better than comma-separated tokens. Kept short
@@ -64,7 +80,7 @@ def as_prompt(terms: dict[str, list[str]] | list[str], limit: int = 220) -> str:
         return ""
     # Only the canonical spellings: priming whisper with the mistakes would teach it those.
     names = list(terms) if isinstance(terms, dict) else terms
-    prompt = "On parle ici de " + ", ".join(names) + "."
+    prompt = LEAD_IN.get(language, "") + ", ".join(names) + "."
     return prompt[:limit]
 
 

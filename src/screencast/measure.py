@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import re
 
-from .episode import Episode
+from .episode import Episode, MissingInput
 from .shell import ffmpeg, log
 
 # Applied before loudnorm on every shoot: an 80 Hz high-pass kills desk rumble and
@@ -76,7 +76,11 @@ def video_filter(cfg, luma: float, saturation: float) -> str:
 def run(ep: Episode) -> None:
     cfg = ep.cfg
     ep.need(ep.mic, "the rush carrying the microphone")
-    ep.need(ep.face, "the clean webcam rush")
+    ep.need_face()
+    if ep.cfg.mic_from_face and not ep.has_face:
+        raise MissingInput(
+            "MIC_SOURCE=face but this shoot has no camera rush — set MIC_SOURCE=screen"
+        )
 
     log("measure loudness (loudnorm pass 1)")
     proc = ffmpeg(
@@ -95,6 +99,18 @@ def run(ep: Episode) -> None:
         quiet=False,
     )
     measured = _parse_loudnorm(proc.stderr or "")
+
+    if not ep.has_face:
+        # No camera means no wide or close-up shot, so nothing the face correction could
+        # apply to. The audio work above still matters — that is where the mic lives.
+        log("no camera rush: skipping the face correction (every shot is the screen)")
+        af = audio_filter(cfg, measured)
+        ep.params.write_text(
+            json.dumps({"audio_filter": af, "video_filter": "", "measured": {}}, indent=2)
+        )
+        log("render normalized mic for transcription")
+        ffmpeg(["-i", ep.mic, "-map", "0:a:0", "-af", af, "-ac", "1", "-ar", "16000", ep.mic16])
+        return
 
     log("measure face luma/saturation (signalstats)")
     stats_file = ep.work / "vstats.txt"

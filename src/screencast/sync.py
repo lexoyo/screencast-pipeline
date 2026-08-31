@@ -18,6 +18,11 @@ def camera_offset(ep: Episode) -> float:
     durations — is known to be wrong (it sums the late start and the early stop), so it
     is announced rather than applied quietly.
     """
+    if not ep.has_face:
+        # Nothing to align: every shot comes from the screen rush, whose timestamps are
+        # the reference in the first place.
+        return 0.0
+
     if ep.cfg.face_offset is not None:
         log(f"face/screen offset = {ep.cfg.face_offset:.3f}s (forced in config.env)")
         return ep.cfg.face_offset

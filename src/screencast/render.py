@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 
 from . import compose
-from .episode import Episode
+from .episode import Episode, MissingInput
 from .shell import ffmpeg, log
 from .slideplan import SlidePlan
 from .sync import camera_offset
@@ -45,8 +45,9 @@ def _segment_graph(ep: Episode, seg: KeptSegment, index: int, params: dict, offs
     # Opening words: the camera wasn't recording yet, so freeze its first frame for the
     # lead-in rather than dropping the audio — the greeting is never sacrificed.
     tpad = f",tpad=start_duration={lead}:start_mode=clone" if lead > 0 else ""
+    correction = f"{params['video_filter']}," if params["video_filter"] else ""
     video = (
-        f"[1:v]trim={cam_start}:{cam_end},setpts=PTS-STARTPTS,{params['video_filter']},"
+        f"[1:v]trim={cam_start}:{cam_end},setpts=PTS-STARTPTS,{correction}"
         f"{fill}{zoom}{tpad},fps={cfg.out_fps}[v]"
     )
     return f"{video};{audio}"
@@ -55,7 +56,11 @@ def _segment_graph(ep: Episode, seg: KeptSegment, index: int, params: dict, offs
 def run(ep: Episode, plan: Edl, layout: SlidePlan | None = None) -> None:
     cfg = ep.cfg
     ep.need(ep.screen, "the screen rush")
-    ep.need(ep.face, "the clean webcam rush")
+    ep.need_face()
+    if ep.cfg.mic_from_face and not ep.has_face:
+        raise MissingInput(
+            "MIC_SOURCE=face but this shoot has no camera rush — set MIC_SOURCE=screen"
+        )
     kept = plan.kept
     if not kept:
         raise ValueError("the EDL keeps no segments — nothing to render")
@@ -68,12 +73,12 @@ def run(ep: Episode, plan: Edl, layout: SlidePlan | None = None) -> None:
     for index, seg in enumerate(kept):
         out = ep.segdir / f"seg{index:04d}.mp4"
         log(f"  seg {index + 1}/{len(kept)}  {seg.scene}  {seg.start:.2f}-{seg.end:.2f}s")
+        # The camera is a second input only when there is one; without it the graph never
+        # references [1:v], and passing a missing file would fail before the first frame.
+        sources = ["-i", ep.screen] + (["-i", ep.face] if ep.has_face else [])
         ffmpeg(
             [
-                "-i",
-                ep.screen,
-                "-i",
-                ep.face,
+                *sources,
                 "-filter_complex",
                 _segment_graph(ep, seg, index, params, offset),
                 "-map",

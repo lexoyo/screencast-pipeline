@@ -104,6 +104,17 @@ class Config:
     def mic_from_face(self) -> bool:
         return self.mic_source == "face"
 
+    @property
+    def forced_lang(self) -> str:
+        """The language pinned by the user, or "" when whisper is to decide.
+
+        FORCE_LANG (and `--lang`) accept "auto", which reads as a value but means the
+        opposite of one. Everything downstream asks this property rather than the raw
+        field, so "auto" cannot leak out as if it were a language code and end up written
+        into lang.txt or a subtitle filename.
+        """
+        return "" if self.force_lang == "auto" else self.force_lang
+
 
 def _get(raw: dict[str, str], key: str, default: str | None = None) -> str:
     val = raw.get(key, "")

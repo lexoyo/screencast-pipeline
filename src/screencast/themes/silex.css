@@ -1,0 +1,31 @@
+/* Silex — the palette of the official documentation, not an invented one.
+ *
+ * Two sources, both in ~/_/silex_docs: the picto (src/assets/picto.svg) carries the brand
+ * colours — violet #8873fe, cyan #56e3ff, pink #ff557a, orange #ffac54 — and the docs
+ * stylesheet (src/stylesheets/extra.css) sets the dark ground at #1a1a2e. A video that is
+ * embedded in a docs page should not look like a different product than the page around it.
+ *
+ * Violet is the one accent used here. The picto's four colours work as a mark, side by
+ * side and small; spread across a full-frame slide they read as a carnival. The other
+ * three stay available for a future variant, deliberately unused.
+ *
+ * Dark like the alexhoyau theme, for a different reason: not YouTube's dark mode, but the
+ * docs' own slate scheme — and a light card would flash between two dark doc pages. */
+
+:root {
+  --bg: #1a1a2e;          /* panels, and the bar behind overlay text — the docs ground */
+  --fg: #ffffff;          /* titles */
+  --muted: #a6a0c8;       /* numbers, kickers, secondary lines — the accent, desaturated */
+  --rule: #8873fe;        /* accent rules and separators — the picto's violet */
+
+  /* Same stack as the alexhoyau theme, and for the same reason: no web fonts, so a slide
+     renders identically in two years with no network. Inter is what the docs ask for
+     (mkdocs.yml: font.text = Inter) and it is installed here, Thin through Black.
+     Inter FIRST: fontconfig answers every request, so leading with a font that is not
+     installed silently returns a substitute and every thin weight becomes a no-op. */
+  --font: "Inter Display", Inter, "Helvetica Neue", "Liberation Sans", Arial, sans-serif;
+
+  /* Translucent enough to keep the speaker visible, opaque enough to stay legible. */
+  --overlay-bg: rgba(26, 26, 46, 0.82);
+  --overlay-strong-bg: rgba(26, 26, 46, 0.93);
+}

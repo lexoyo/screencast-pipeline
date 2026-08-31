@@ -140,42 +140,100 @@ def run_stage(name: str, ep: Episode) -> None:
         raise ValueError(f"unknown stage: {name}")
 
 
+def _closest_camera(screen: Path) -> Path | None:
+    """The camera rush written closest in time to this screen rush.
+
+    Not "the newest": re-running an older episode is normal — `new <an older take>` — and
+    the newest camera file then belongs to a different day. Closest in time is the same
+    answer as newest for a fresh shoot, and the right one for an old take.
+    """
+    folder = RECORDINGS / "cam"
+    if not folder.is_dir():
+        return None
+    files = [p for p in folder.iterdir() if p.is_file() and p.suffix.lower() in CONTAINERS]
+    if not files:
+        return None
+    when = screen.stat().st_mtime
+    return min(files, key=lambda p: abs(p.stat().st_mtime - when))
+
+
+PAIRING_WINDOW = 300.0
+"""How far apart two rushes may be written and still be the same take, in seconds.
+
+OBS closes both files within seconds of each other. The camera folder, however, keeps
+every past shoot, so "the newest camera file" is only the right one when it was written
+alongside this screen rush — otherwise it belongs to another day, and pairing them would
+put someone else's six minutes of face onto this video without a word.
+"""
+
+
 def cmd_new(args, cfg) -> int:
-    """Pair the newest screen recording with the newest camera file, then run everything."""
+    """Pair the newest screen recording with the camera file of the same take, then run."""
     screen = Path(args.screen).resolve() if args.screen else _newest_recording(RECORDINGS)
     if not screen or not screen.is_file():
         print(f"no screen recording found in {RECORDINGS}", file=sys.stderr)
         return 1
-    camera = _newest_recording(RECORDINGS / "cam")
-    if not camera:
-        print(f"no camera file found in {RECORDINGS / 'cam'}", file=sys.stderr)
-        print(
-            "  the OBS Source Record filter is what produces it — see docs/setup-obs.sh",
-            file=sys.stderr,
-        )
-        return 1
+
+    camera: Path | None = None
+    if args.cam:
+        camera = Path(args.cam).resolve()
+        if not camera.is_file():
+            print(f"no such camera file: {camera}", file=sys.stderr)
+            return 1
+        if camera.suffix.lower() not in CONTAINERS:
+            # The automatic path filters on container; --cam used not to, and a symlinked
+            # text file passed every check until ffmpeg met it, ten minutes and one model
+            # call into the run.
+            print(f"not a video file: {camera.name} ({', '.join(CONTAINERS)})", file=sys.stderr)
+            return 1
+    elif not args.no_cam:
+        candidate = _closest_camera(screen)
+        if candidate:
+            apart = abs(candidate.stat().st_mtime - screen.stat().st_mtime)
+            if apart <= PAIRING_WINDOW:
+                camera = candidate
+            else:
+                # Neither guess is safe here: pairing them makes a video out of two
+                # different shoots, and dropping the camera silently turns a normal take
+                # into a screen-only one. So it stops and asks.
+                print(f"the closest camera file is {apart / 60:.1f} min from the screen rush,",
+                      file=sys.stderr)
+                print("so they are probably not the same take:", file=sys.stderr)
+                print(f"  screen : {screen}", file=sys.stderr)
+                print(f"  camera : {candidate}", file=sys.stderr)
+                print("  --cam <file> to pair another one, --no-cam to shoot screen-only",
+                      file=sys.stderr)
+                return 1
+        else:
+            print(f"no camera file in {RECORDINGS / 'cam'} — screen-only shoot")
+            print("  (the OBS Source Record filter is what produces one)")
 
     root = RECORDINGS / f"{screen.stem}_montage"
     root.mkdir(parents=True, exist_ok=True)
     # Symlinks rather than copies: the rushes are the master, and a 800 MB duplicate per
     # episode is not worth it. The container is kept so nothing has to guess later.
-    for link, target in (
-        (root / f"screen{screen.suffix}", screen),
-        (root / f"face{camera.suffix}", camera),
-    ):
+    links = [(root / f"screen{screen.suffix}", screen)]
+    if camera:
+        links.append((root / f"face{camera.suffix}", camera))
+    for link, target in links:
         if link.is_symlink() or link.exists():
             link.unlink()
         link.symlink_to(target)
 
-    cfg = cfg.__class__(
-        **{
-            **cfg.__dict__,
-            "screen_file": f"screen{screen.suffix}",
-            "face_file": f"face{camera.suffix}",
-        }
-    )
+    # Recorded, so a later `run` on this episode can tell "shot without a camera" from
+    # "the camera rush is missing" — the second must stop, the first must not.
+    marker = root / ".screen-only"
+    if camera and marker.is_file():
+        marker.unlink()
+    elif not camera:
+        marker.write_text("no camera rush for this shoot\n")
+
+    overrides = {"screen_file": f"screen{screen.suffix}"}
+    if camera:
+        overrides["face_file"] = f"face{camera.suffix}"
+    cfg = cfg.__class__(**{**cfg.__dict__, **overrides})
     print(f"écran  : {screen}")
-    print(f"caméra : {camera}")
+    print(f"caméra : {camera if camera else '— aucune, tournage écran seul'}")
     print(f"montage: {root}")
     print("-" * 60)
     return _run_pipeline(root, cfg, STAGES)
@@ -268,10 +326,22 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--channel", default="alexhoyau", help="whose video this is (see src/screencast/channels)"
     )
+    # config.env holds the language of the usual channel, and a shoot in another one is a
+    # one-off: editing the file for a single episode is how you forget to edit it back and
+    # transcribe the next take in the wrong language. `auto` hands the choice to whisper.
+    parser.add_argument(
+        "--lang", default=None, metavar="CODE",
+        help="spoken language for this run ('en', 'fr', 'auto') — overrides FORCE_LANG",
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     new = sub.add_parser("new", help="latest recording -> full deliverable")
     new.add_argument("screen", nargs="?", help="a specific screen recording")
+    cam_choice = new.add_mutually_exclusive_group()
+    cam_choice.add_argument("--cam", default=None, metavar="FILE",
+                            help="the camera rush of this take (default: the closest in time)")
+    cam_choice.add_argument("--no-cam", action="store_true",
+                            help="screen-only shoot: every shot is the screen")
     new.set_defaults(func=cmd_new)
 
     one = sub.add_parser("run", help="a single stage on an existing episode")
@@ -288,7 +358,10 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
     try:
-        cfg = load(Path(args.config) if args.config else default_config_path())
+        cfg = load(
+            Path(args.config) if args.config else default_config_path(),
+            overrides={"FORCE_LANG": args.lang} if args.lang else None,
+        )
     except ConfigError as exc:
         print(f"config: {exc}", file=sys.stderr)
         return 2

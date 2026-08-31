@@ -69,7 +69,7 @@ def whisper_json(
     clause without taking the whole paragraph with it.
     """
     cfg = ep.cfg
-    lang = cfg.force_lang or "auto"
+    lang = cfg.forced_lang or "auto"
     cmd: list[str | Path] = [
         cfg.whisper_bin,
         "-m",
@@ -84,7 +84,10 @@ def whisper_json(
     # Prime the decoder with the names it gets wrong. `--carry-initial-prompt` repeats the
     # prompt on every window: without it the glossary only biases the opening minute, and a
     # name spoken at minute nine comes out mangled exactly as before.
-    prompt = glossary.as_prompt(glossary.load())
+    # ep.language() and not cfg.forced_lang: on the subtitle pass the language whisper
+    # detected is already written to lang.txt, and priming that take in another language is
+    # exactly what this argument exists to prevent.
+    prompt = glossary.as_prompt(glossary.load(), language=ep.language())
     if prompt:
         cmd += ["--prompt", prompt, "--carry-initial-prompt"]
     if word_timings:
@@ -102,7 +105,7 @@ def run_stage(ep: Episode) -> None:
         log("extract raw mic 16k (measure did not run first)")
         ffmpeg(["-i", ep.mic, "-map", "0:a:0", "-ac", "1", "-ar", "16000", ep.mic16])
 
-    lang = cfg.force_lang or "auto"
+    lang = cfg.forced_lang or "auto"
     log(f"whisper ({cfg.whisper_dtw_model}) lang={lang} on normalized audio")
     whisper_json(ep, ep.mic16, ep.work / "transcript", word_timings=True)
 
@@ -128,6 +131,6 @@ def run_stage(ep: Episode) -> None:
     ep.segments.write_text(json.dumps(segments, indent=2))
     ep.words.write_text(json.dumps(words))
 
-    detected = cfg.force_lang or data.get("result", {}).get("language") or "auto"
+    detected = cfg.forced_lang or data.get("result", {}).get("language") or "auto"
     ep.lang_file.write_text(f"{detected}\n")
     log(f"language={detected}  segments={len(segments)}  words={len(words)}")

@@ -15,7 +15,7 @@ STUDIO = "https://studio.youtube.com"
 
 
 def build(deliverable: Path, title: str, chapters: list[tuple[str, str]], language: str,
-          channel_name: str = "") -> str:
+          channel_name: str = "", translated: str = "") -> str:
     """The publishing checklist for one finished video."""
     files = sorted(p.name for p in deliverable.glob("*") if p.is_file())
     subtitles = [f for f in files if f.endswith(".srt")]
@@ -49,12 +49,13 @@ def build(deliverable: Path, title: str, chapters: list[tuple[str, str]], langua
     for extra in others:
         code = extra.split(".")[-2]
         lines.append(f"- ajouter la langue **{code}** et téléverser `{extra}`")
-    if (deliverable / "metadata.en.txt").is_file():
+    if translated:
+        code = translated.split(".")[-2]
         lines += [
             "",
             "Dans la même page, chaque langue ajoutée a **son titre et sa description** :",
-            "les coller depuis `metadata.en.txt`. C'est ce que lit un spectateur qui arrive",
-            "d'une recherche en anglais — pas les sous-titres.",
+            f"les coller depuis `{translated}`. C'est ce que lit un spectateur qui arrive",
+            f"d'une recherche en **{code}** — pas les sous-titres.",
         ]
     lines += [
         "",
@@ -82,9 +83,10 @@ def build(deliverable: Path, title: str, chapters: list[tuple[str, str]], langua
         "final.mp4": "la vidéo à publier",
         "project.mlt": "le projet Shotcut, si tu veux remonter (garde les rushes à côté)",
         "metadata.txt": "titre, description, liens, tags, chapitres",
-        "metadata.en.txt": "les mêmes, en anglais — pour la traduction YouTube",
         "QC.md": "ce que la relecture a trouvé, à lire avant de publier",
     }
+    if translated:
+        described[translated] = "les mêmes, traduits — pour la version par langue de la plateforme"
     for name in files:
         if name.endswith(".srt"):
             note = "sous-titres"

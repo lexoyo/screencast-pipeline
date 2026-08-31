@@ -10,10 +10,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from . import lang
 from . import transcript as transcript_mod
 from .episode import Episode
 from .parsing import clean_srt
-from .shell import brain, ffmpeg, log, run
+from .shell import brain, ffmpeg, log
 from .transcribe import whisper_json
 
 
@@ -29,13 +30,12 @@ def run_stage(ep: Episode, prompts_dir: Path, title: str = "") -> None:
     log(f"subtitles: transcribe final cut (lang={source_lang})")
     whisper_json(ep, final_wav, ep.work / "subs_native", word_timings=False, srt=True)
 
-    if source_lang == "auto":
-        source_lang = "en"
+    source_lang = lang.spoken(source_lang)
     native = ep.subs_dir / f"{source_lang}.srt"
     native.write_text((ep.work / "subs_native.srt").read_text())
     log(f"native subs -> subs/{source_lang}.srt")
 
-    target = "fr" if source_lang == "en" else "en"
+    target = lang.target(source_lang)
     log(f"translate subtitles {source_lang} -> {target}")
     template = (prompts_dir / "translate.md").read_text()
     prompt = (

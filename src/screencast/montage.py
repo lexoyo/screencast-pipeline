@@ -18,7 +18,7 @@ from .shell import brain, ffprobe_duration, log, run
 
 def build_input(ep: Episode) -> dict:
     """Everything the model needs to decide the edit, in one object."""
-    duration = ffprobe_duration(ep.face)
+    duration = ffprobe_duration(ep.face if ep.has_face else ep.screen)
     return {
         "segments": json.loads(ep.segments.read_text()),
         "silences": json.loads(ep.silences.read_text()) if ep.silences.is_file() else [],
@@ -27,17 +27,35 @@ def build_input(ep: Episode) -> dict:
     }
 
 
+def force_screen_only(data: dict) -> dict:
+    """Pin every segment to the screen shot, for a shoot with no camera rush."""
+    for segment in data.get("timeline", []):
+        segment["scene"] = "ecran"
+    return data
+
+
 def parse_answer(raw: str) -> dict:
     """Turn the model's answer into an EDL dict, tolerating fences and preamble."""
     return json.loads(extract_json_object(strip_code_fences(raw)))
 
 
+SCREEN_ONLY_NOTE = """## NO CAMERA ON THIS SHOOT
+
+There is no camera rush: the only shot available is `ecran`. Set `"scene": "ecran"` on
+every segment. Everything else — the cuts, the chapters, the metadata — is unchanged.
+"""
+
+
 def run_stage(ep: Episode, prompts_dir: Path) -> None:
-    ep.need(ep.face, "the clean webcam rush")
+    ep.need_face()
     ep.need(ep.segments, "run the transcribe stage first")
 
     payload = build_input(ep)
     prompt = (prompts_dir / "montage.md").read_text()
+    if not ep.has_face:
+        # Prepended, not appended: montage.md ends on "Output the JSON object and nothing
+        # else", and that instruction is worth keeping as the last thing the model reads.
+        prompt = f"{SCREEN_ONLY_NOTE}\n{prompt}"
     ep.brain_prompt.write_text(f"{prompt}\n\n## DATA\n{json.dumps(payload)}")
 
     log(f"montage brain: {ep.cfg.claude_bin} (transcript text only leaves the machine)")
@@ -45,6 +63,10 @@ def run_stage(ep: Episode, prompts_dir: Path) -> None:
     ep.brain_raw.write_text(answer)
 
     data = parse_answer(answer)
+    if not ep.has_face:
+        # Asked in the prompt, enforced here: a stray "serre" would send the render to a
+        # camera file that does not exist, and the failure would surface ten minutes in.
+        data = force_screen_only(data)
     ep.edl.write_text(json.dumps(data, indent=2))
 
     parsed = timeline_mod.parse(data)

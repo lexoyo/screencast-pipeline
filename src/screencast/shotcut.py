@@ -121,9 +121,9 @@ def build(ep: Episode, plan: Edl, layout: SlidePlan | None = None) -> str:
     cfg = ep.cfg
     kept = plan.kept
     screen = ep.screen.resolve()
-    face = ep.face.resolve()
     screen_dur = ffprobe_duration(screen)
-    face_dur = ffprobe_duration(face)
+    face = ep.face.resolve() if ep.has_face else None
+    face_dur = ffprobe_duration(face) if face else screen_dur
     offset = camera_offset(ep)
     total = sum(seg.duration for seg in kept)
 
@@ -164,8 +164,14 @@ def build(ep: Episode, plan: Edl, layout: SlidePlan | None = None) -> str:
         track_ecran.append(
             _entry("screen_v", seg.start, seg.end) if seg.scene == "ecran" else _blank(seg.duration)
         )
-        track_large.extend(face_clip if seg.scene == "large" else [_blank(seg.duration)])
-        track_serre.extend(face_clip if seg.scene == "serre" else [_blank(seg.duration)])
+        # `face` is None on a screen-only shoot: the camera tracks stay in the project for
+        # the track indexes below, but nothing may reference a producer that plays black —
+        # a stale EDL would otherwise put ten seconds of black over the screen in Shotcut
+        # while final.mp4 shows the screen.
+        wide = face_clip if (face and seg.scene == "large") else [_blank(seg.duration)]
+        close = face_clip if (face and seg.scene == "serre") else [_blank(seg.duration)]
+        track_large.extend(wide)
+        track_serre.extend(close)
         track_audio.append(_entry("screen_a", seg.start, seg.end))
 
         if gap_after is not None and index == gap_after:
@@ -232,6 +238,21 @@ def build(ep: Episode, plan: Edl, layout: SlidePlan | None = None) -> str:
         else ""
     )
 
+    # The wide and close-up tracks stay in the project even when there is no camera: they
+    # are empty, and keeping them means the track indexes in the transitions below are the
+    # same in both cases. Their producer then has to resolve to something — a black colour
+    # clip rather than a path to a file that is not there, which Shotcut would refuse to
+    # open.
+    face_producer = (
+        f'<chain id="face_v" out="{tc(face_dur)}"><property name="length">{tc(face_dur)}</property>'
+        f'<property name="resource">{face}</property>'
+        '<property name="mlt_service">avformat-novalidate</property>'
+        '<property name="audio_index">-1</property></chain>'
+        if face
+        else f'<producer id="face_v" out="{tc(face_dur)}"><property name="length">{tc(face_dur)}</property>'
+        '<property name="mlt_service">color</property><property name="resource">0</property></producer>'
+    )
+
     nl = "\n"
     return f"""<?xml version="1.0" encoding="utf-8"?>
 <mlt LC_NUMERIC="C" version="7.40.0" title="screencast">
@@ -240,7 +261,7 @@ def build(ep: Episode, plan: Edl, layout: SlidePlan | None = None) -> str:
     frame_rate_num="{cfg.out_fps}" frame_rate_den="1" colorspace="709"/>
   <producer id="black" out="{tc(total)}"><property name="length">{tc(total)}</property><property name="mlt_service">color</property><property name="resource">0</property></producer>
   <chain id="screen_v" out="{tc(screen_dur)}"><property name="length">{tc(screen_dur)}</property><property name="resource">{screen}</property><property name="mlt_service">avformat-novalidate</property><property name="audio_index">-1</property></chain>
-  <chain id="face_v" out="{tc(face_dur)}"><property name="length">{tc(face_dur)}</property><property name="resource">{face}</property><property name="mlt_service">avformat-novalidate</property><property name="audio_index">-1</property></chain>
+  {face_producer}
   <chain id="screen_a" out="{tc(screen_dur)}"><property name="length">{tc(screen_dur)}</property><property name="resource">{screen}</property><property name="mlt_service">avformat-novalidate</property><property name="video_index">-1</property></chain>
   <playlist id="track_ecran">
 {nl.join(track_ecran)}
