@@ -90,8 +90,13 @@ def whisper_json(
     prompt = glossary.as_prompt(glossary.load(), language=ep.language())
     if prompt:
         cmd += ["--prompt", prompt, "--carry-initial-prompt"]
+    # -ml on BOTH passes. It used to ride along with the word timings, so the subtitle pass
+    # ran without it and whisper emitted whatever length it liked: six-line cues covering
+    # half the picture, unreadable on the finished video. The transcript pass wants it for
+    # granularity, the subtitle pass wants it because a cue has to fit on screen.
+    cmd += ["-ml", "70"]
     if word_timings:
-        cmd += ["-ojf", "-dtw", cfg.whisper_dtw_model, "-ml", "70"]
+        cmd += ["-ojf", "-dtw", cfg.whisper_dtw_model]
     if srt:
         cmd += ["-osrt"]
     run(cmd, capture=True)
