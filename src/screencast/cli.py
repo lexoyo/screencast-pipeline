@@ -14,6 +14,7 @@ import argparse
 import os
 import sys
 from pathlib import Path
+from shutil import which
 
 from . import (
     cuts,
@@ -245,7 +246,34 @@ def cmd_run(args, cfg) -> int:
     )
 
 
+def check_tools(cfg) -> list[str]:
+    """What is missing before anything is computed, in the order it would be needed.
+
+    `doctor` has always been able to say this; a `run` never asked. So a missing whisper
+    surfaced as a traceback after a minute of audio work, and a missing sonorita-cli would
+    have surfaced after the transcription, the model call and the render — the expensive
+    three — were already paid for.
+    """
+    missing: list[str] = []
+    if not cfg.whisper_bin.exists():
+        missing.append(f"whisper: {cfg.whisper_bin}")
+    if not cfg.whisper_model.exists():
+        missing.append(f"whisper model: {cfg.whisper_model}")
+    if not which(cfg.claude_bin) and not Path(cfg.claude_bin).is_file():
+        missing.append(f"the montage brain: {cfg.claude_bin}")
+    if cfg.music and not which(cfg.sonorita_bin):
+        missing.append(f"sonorita-cli: {cfg.sonorita_bin} (or run with --no-music)")
+    return missing
+
+
 def _run_pipeline(root: Path, cfg, stages) -> int:
+    missing = check_tools(cfg)
+    if missing:
+        print("missing before anything can run:", file=sys.stderr)
+        for item in missing:
+            print(f"  ✗ {item}", file=sys.stderr)
+        return 1
+
     ep = Episode(root=root, cfg=cfg)
     ep.ensure_dirs()
 
@@ -291,7 +319,6 @@ def cmd_plan(args, cfg) -> int:
 
 
 def cmd_doctor(args, cfg) -> int:
-    from shutil import which
 
     print("configuration:")
     print(describe(cfg))
@@ -305,10 +332,15 @@ def cmd_doctor(args, cfg) -> int:
         ok = path.exists()
         print(f"  {'✓' if ok else '✗'} {label:12s} {path}")
         missing += not ok
-    for tool in (cfg.claude_bin, cfg.sonorita_bin):
-        found = which(tool)
-        print(f"  {'✓' if found else '✗'} {tool:12s} {found or 'MISSING'}")
-        missing += not found
+    found = which(cfg.claude_bin)
+    print(f"  {'✓' if found else '✗'} {cfg.claude_bin:12s} {found or 'MISSING'}")
+    missing += not found
+    # Only a problem when music is on: with MUSIC="off" the harness never calls it, and a
+    # ✗ on a tool nobody needs is how a checklist stops being read.
+    found = which(cfg.sonorita_bin)
+    state = found or ("MISSING" if cfg.music else "not needed (MUSIC=off)")
+    print(f"  {'✓' if found or not cfg.music else '✗'} {cfg.sonorita_bin:12s} {state}")
+    missing += cfg.music and not found
     print(f"\nrecordings: {RECORDINGS}")
     return 1 if missing else 0
 
@@ -329,6 +361,10 @@ def main(argv: list[str] | None = None) -> int:
     # config.env holds the language of the usual channel, and a shoot in another one is a
     # one-off: editing the file for a single episode is how you forget to edit it back and
     # transcribe the next take in the wrong language. `auto` hands the choice to whisper.
+    parser.add_argument(
+        "--no-music", action="store_true",
+        help="skip the music under the cards (sonorita-cli is then not needed)",
+    )
     parser.add_argument(
         "--lang", default=None, metavar="CODE",
         help="spoken language for this run ('en', 'fr', 'auto') — overrides FORCE_LANG",
@@ -358,9 +394,14 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
     try:
+        overrides: dict[str, str] = {}
+        if args.lang:
+            overrides["FORCE_LANG"] = args.lang
+        if args.no_music:
+            overrides["MUSIC"] = "off"
         cfg = load(
             Path(args.config) if args.config else default_config_path(),
-            overrides={"FORCE_LANG": args.lang} if args.lang else None,
+            overrides=overrides or None,
         )
     except ConfigError as exc:
         print(f"config: {exc}", file=sys.stderr)

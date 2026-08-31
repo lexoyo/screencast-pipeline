@@ -124,3 +124,22 @@ def test_empty_overrides_do_not_erase_the_file_value(tmp_path):
 def test_a_missing_config_file_says_what_to_do(tmp_path):
     with pytest.raises(ConfigError, match="config.env.example"):
         load(tmp_path / "nope.env")
+
+
+def test_music_is_on_unless_turned_off(tmp_path):
+    assert load(_write(tmp_path, MINIMAL)).music is True
+    assert load(_write(tmp_path, MINIMAL + 'MUSIC="off"\n')).music is False
+
+
+def test_music_accepts_the_usual_spellings(tmp_path):
+    for on in ("on", "true", "YES", "1"):
+        assert load(_write(tmp_path, MINIMAL + f'MUSIC="{on}"\n')).music is True
+    for off in ("off", "false", "NO", "0"):
+        assert load(_write(tmp_path, MINIMAL + f'MUSIC="{off}"\n')).music is False
+
+
+def test_a_music_value_that_is_neither_names_itself(tmp_path):
+    # the failure this avoids: MUSIC="maybe" quietly reading as False, and a video that
+    # was meant to have music shipping silent
+    with pytest.raises(ConfigError, match="must be on or off"):
+        load(_write(tmp_path, MINIMAL + 'MUSIC="maybe"\n'))

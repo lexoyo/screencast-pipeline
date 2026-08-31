@@ -65,6 +65,11 @@ def run(
     """
     argv = [str(c) for c in cmd]
     wants_stdout = capture or stdin_text is not None
+    if shutil.which(argv[0]) is None and not Path(argv[0]).is_file():
+        # Otherwise subprocess raises FileNotFoundError, which no caller catches: whisper
+        # missing ended a run in a raw traceback after a minute of audio work, and the
+        # music step's "not fatal" handler only ever looked for ToolError.
+        raise ToolError(f"{argv[0]}: not found — install it, or fix its path in config.env")
     proc = subprocess.run(
         argv,
         input=stdin_text,

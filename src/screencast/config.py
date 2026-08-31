@@ -51,6 +51,7 @@ class Config:
     melt_bin: str
     sonorita_bin: str
     force_lang: str
+    music: bool
 
     # -- inputs
     screen_file: str
@@ -125,6 +126,16 @@ def _get(raw: dict[str, str], key: str, default: str | None = None) -> str:
     return val
 
 
+def _flag(raw: dict[str, str], key: str, default: str) -> bool:
+    """A setting that is on or off, and says so when it is neither."""
+    value = _get(raw, key, default).strip().lower()
+    if value in ("on", "true", "yes", "1"):
+        return True
+    if value in ("off", "false", "no", "0"):
+        return False
+    raise ConfigError(f"config.env: {key}={value!r} must be on or off")
+
+
 def _num(raw: dict[str, str], key: str, default: str, cast, unit: str = "") -> float | int:
     val = _get(raw, key, default)
     try:
@@ -168,6 +179,7 @@ def load(config_path: Path, overrides: dict[str, str] | None = None) -> Config:
         melt_bin=_get(raw, "MELT_BIN", "melt-7"),
         sonorita_bin=_get(raw, "SONORITA_BIN", "sonorita-cli"),
         force_lang=_get(raw, "FORCE_LANG", ""),
+        music=_flag(raw, "MUSIC", "on"),
         screen_file=_get(raw, "SCREEN_FILE", "screen.mkv"),
         face_file=_get(raw, "FACE_FILE", "face.mkv"),
         mic_source=mic_source,

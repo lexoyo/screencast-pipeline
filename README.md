@@ -90,6 +90,21 @@ the theme. One JSON file per channel in `src/screencast/channels/`, with its pal
 `src/screencast/themes/`. `alexhoyau` is the default; `silex` shoots the official
 documentation, on the docs' own colours.
 
+## Music
+
+Music under the cards is generated locally by `sonorita-cli` and is the normal case, so a
+failure there **stops the run** — a video that was meant to have music and quietly ships
+silent is one that gets published before anyone notices. Not wanting music is a decision:
+
+```bash
+./screencast --no-music new          # this run only
+MUSIC="off"                          # in config.env, for a machine without sonorita-cli
+```
+
+Whatever a run needs is checked **before** it starts — whisper, its model, the montage
+brain, and sonorita-cli when music is on. Missing tools are named in three seconds rather
+than after the transcription, the model call and the render have been paid for.
+
 ## A shoot with no camera
 
 The camera rush feeds the wide and close-up shots. A documentation screencast usually

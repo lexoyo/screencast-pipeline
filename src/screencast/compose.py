@@ -165,27 +165,28 @@ def apply_overlays(ep: Episode, source: Path, layout: SlidePlan, out: Path) -> P
 def apply_music(ep: Episode, source: Path, layout: SlidePlan, plan_meta, out: Path) -> Path:
     """Mix the generated tracks under the video.
 
-    Failure here is not fatal: a video with no music is a video, a pipeline that stops on
-    the last step is a wasted render. The absence is logged rather than raised.
+    Music is the normal case, so a failure here STOPS the run. This used to be the
+    opposite — the absence was logged and the render shipped silent — and that is the
+    wrong trade: a video that was meant to have music and quietly does not is a video that
+    gets published before anyone notices. Not wanting music is a decision, and it is taken
+    with MUSIC="off" in config.env or `--no-music`, which skips this step entirely.
     """
-    from .shell import ToolError
-
-    try:
-        # The sung lines come from `jingle`; the card titles are the fallback for an EDL
-        # produced before that field existed.
-        tracks = music.build_tracks(
-            ep,
-            layout,
-            intro_lyrics=plan_meta.jingle.get("intro")
-            or (plan_meta.intro.title if plan_meta.intro else ""),
-            outro_lyrics=plan_meta.jingle.get("outro")
-            or (plan_meta.outro.title if plan_meta.outro else ""),
-        )
-    except ToolError as exc:
-        log(f"⚠ music skipped: {exc}")
+    if not ep.cfg.music:
+        log("music disabled (--no-music)")
         if source != out:
             out.write_bytes(source.read_bytes())
         return out
+
+    # The sung lines come from `jingle`; the card titles are the fallback for an EDL
+    # produced before that field existed.
+    tracks = music.build_tracks(
+        ep,
+        layout,
+        intro_lyrics=plan_meta.jingle.get("intro")
+        or (plan_meta.intro.title if plan_meta.intro else ""),
+        outro_lyrics=plan_meta.jingle.get("outro")
+        or (plan_meta.outro.title if plan_meta.outro else ""),
+    )
 
     bed_duration = ffprobe_duration(tracks["bed"]) if "bed" in tracks else 0.0
     beds = music.with_gains(
