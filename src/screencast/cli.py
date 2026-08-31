@@ -134,9 +134,13 @@ def run_stage(name: str, ep: Episode) -> None:
             title = ""
         subtitles.run_stage(ep, PROMPTS, title)
     elif name == "publish":
-        publish.run(ep, _plan(ep), PROMPTS)
+        plan = _plan(ep)
+        publish.run(ep, plan, PROMPTS,
+                    slideplan.build(plan, plan.kept, channel=CHANNEL.as_values()))
     elif name == "qc":
-        qc.run(ep, _plan(ep), PROMPTS)
+        plan = _plan(ep)
+        qc.run(ep, plan, PROMPTS,
+               slideplan.build(plan, plan.kept, channel=CHANNEL.as_values()))
     else:
         raise ValueError(f"unknown stage: {name}")
 

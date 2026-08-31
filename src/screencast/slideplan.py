@@ -110,8 +110,22 @@ class SlidePlan:
 
     total_added: float = 0.0
 
+    intro_at: float | None = None
+    """Where the intro card was inserted into the body, if there is one."""
+
+    intro_duration: float = 0.0
+
     def chapter_time(self, final_seconds: float) -> float:
-        """Where a body timestamp lands once the cards are in place."""
+        """Where a body timestamp lands once the cards are in place.
+
+        The intro card no longer sits at 0:00, so `body_offset` alone stopped being the
+        answer: a card inserted mid-body pushes back only what follows it. The published
+        chapter list was computed without this and every chapter after the card was early
+        by its length — six seconds, enough for a viewer to land before the sentence that
+        names the chapter.
+        """
+        if self.intro_at is not None and final_seconds >= self.intro_at:
+            return final_seconds + self.intro_duration + self.body_offset
         return final_seconds + self.body_offset
 
 
@@ -323,6 +337,8 @@ def build(
         overlays=overlays,
         theme=(channel or {}).get("theme") or DEFAULT_THEME,
         body_offset=body_offset,
+        intro_at=insert_at if (meta.intro and insert_at > 0.0) else None,
+        intro_duration=intro_seconds if meta.intro else 0.0,
         total_added=sum(card.duration for card in cards),
     )
 

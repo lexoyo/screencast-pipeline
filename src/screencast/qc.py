@@ -192,7 +192,7 @@ def blocking(issues: list[Issue]) -> list[Issue]:
 TRANSCRIPT_BUDGET = 40_000
 
 
-def run(ep, plan, prompts_dir: Path) -> None:
+def run(ep, plan, prompts_dir: Path, layout=None) -> None:
     """The last stage: proof-read what will be public, write the note, say what it found."""
     from .publish import chapter_rows
     from .shell import ffprobe_duration
@@ -204,7 +204,7 @@ def run(ep, plan, prompts_dir: Path) -> None:
         return
 
     meta = plan.metadata
-    rows = chapter_rows(plan, load_kept(ep.kept))
+    rows = chapter_rows(plan, load_kept(ep.kept), layout)
     links_file = ep.work / "links.json"
     links = json.loads(links_file.read_text()) if links_file.is_file() else []
     duration = ffprobe_duration(deliverable / "final.mp4")

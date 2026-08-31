@@ -385,3 +385,19 @@ def test_a_channel_without_a_theme_keeps_the_default():
     plan = _plan(BODY)
     assert build(plan, plan.kept, channel={"name": "X"}).theme == "alexhoyau"
     assert build(plan, plan.kept).theme == "alexhoyau"
+
+
+def test_a_chapter_after_the_intro_card_is_pushed_back_by_it():
+    # the published chapter list used to ignore the cards entirely: every chapter after the
+    # intro card was early by its length, landing the viewer before the sentence naming it
+    timeline = [
+        {"start": 0.0, "end": 40.0, "drop": False, "scene": "ecran", "plan": True},
+        {"start": 40.0, "end": 200.0, "drop": False, "scene": "ecran"},
+    ]
+    plan = _plan(timeline, {"intro": {"title": "T", "subtitle": "S"},
+                            "chapters": [{"at": 40.0, "label": "Part one"}]})
+    layout = build(plan, plan.kept, channel=CHANNEL, intro_seconds=6.0)
+
+    assert layout.intro_at == 40.0, "the card lands at the end of the spoken summary"
+    assert layout.chapter_time(50.0) == 56.0   # after the card: pushed back by its length
+    assert layout.chapter_time(10.0) == 10.0   # before it: untouched

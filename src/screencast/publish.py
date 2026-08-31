@@ -23,14 +23,21 @@ from .transcript import links_section
 FALLBACK_SPOKEN = lang.FALLBACK
 
 
-def chapter_rows(plan: Edl, kept: list[dict]) -> list[tuple[float, str]]:
+def chapter_rows(plan: Edl, kept: list[dict], layout=None) -> list[tuple[float, str]]:
     """Chapter markers projected onto the edited timeline.
 
     The brain places them on SOURCE timestamps, and the cut removed time before most of
     them, so every marker has to move. YouTube also insists the list starts at 0:00 —
     without that first marker it ignores the whole set.
     """
-    rows = [(remap_to_final(ch.at, kept), ch.label) for ch in plan.metadata.chapters]
+    # remap_to_final answers "where in the CUT body", the layout answers "and where once
+    # the cards are in". Without the second, every chapter after the intro card is early by
+    # its length, and the timestamps in the description miss the sentence they name.
+    def place(at: float) -> float:
+        body = remap_to_final(at, kept)
+        return layout.chapter_time(body) if layout else body
+
+    rows = [(place(ch.at), ch.label) for ch in plan.metadata.chapters]
     rows.sort(key=lambda row: row[0])
     if not rows or rows[0][0] >= 1:
         rows.insert(0, (0.0, "Intro"))
@@ -106,13 +113,13 @@ def translated_metadata_text(data: dict, rows: list[tuple[float, str]],
     return "\n".join(lines) + "\n"
 
 
-def run(ep: Episode, plan: Edl, prompts_dir: Path | None = None) -> None:
+def run(ep: Episode, plan: Edl, prompts_dir: Path | None = None, layout=None) -> None:
     ep.need(ep.draft, "run the draft stage first")
     kept = load_kept(ep.kept)
     deliverable = ep.deliverable
     deliverable.mkdir(parents=True, exist_ok=True)
 
-    rows = chapter_rows(plan, kept)
+    rows = chapter_rows(plan, kept, layout)
     links_file = ep.work / "links.json"
     links = json.loads(links_file.read_text()) if links_file.is_file() else []
     # What was actually spoken, according to the harness rather than the montage model.
