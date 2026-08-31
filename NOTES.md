@@ -160,6 +160,28 @@ découpage-là qu'il faut obtenir sans intervention humaine.
 Alex ajoute qu'on pourra un jour appliquer le même principe à la **vidéo longue**. Pas
 maintenant : elle marche, on n'y touche pas.
 
+### Les bornes se calent sur les MOTS, pas sur les cues
+
+Les trois premiers shorts coupaient un mot **aux deux bouts**, tous les trois. La cause :
+les bornes étaient alignées sur les frontières de cues de `final.<lang>.srt`, qui vient de
+la transcription de la vidéo **montée**, alors que les mots sont horodatés dans
+`work/words.json`, issu du **rush**. Deux transcriptions indépendantes, décalées de quelques
+dixièmes : une borne juste dans l'une tombe au milieu d'un mot dans l'autre.
+
+La règle pour l'étape à écrire :
+
+1. Caler `start` sur le **début d'un mot** et `end` sur la **fin d'un mot**, d'après
+   `words.json` (temps rush) — jamais d'après le SRT.
+2. Mieux : préférer une **frontière de phrase** (mot terminé par `.`, `?`, `!`) quand il y
+   en a une à quelques secondes, pour ne pas ouvrir ni fermer en plein milieu d'une idée.
+3. **Le vérifier après coup** : aucun mot de `words.json` ne doit avoir
+   `start < borne < end`. Le contrôle tient en trois lignes et il aurait évité les trois
+   défauts.
+
+Alex : « assure-toi que le brain le fait » — donc le prompt qui choisira les extraits doit
+exiger des bornes sur frontières de phrases, et le code doit le vérifier plutôt que de faire
+confiance.
+
 ### Vérification — la règle qui a été enfreinte trois fois
 
 **Une frame de contrôle par palier de cadrage**, pas une par short. Un cadre est fixe
