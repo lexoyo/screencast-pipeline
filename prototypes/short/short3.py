@@ -1,3 +1,8 @@
+"""Short 3 : le cadre suit le sujet — les calques, puis les réglages.
+
+La bascule est à +31 s, là où la voix passe de « the names you see in the layers » à
+« because here you see in the settings, the tag name ». Deux cadres, une coupe franche.
+"""
 import subprocess, sys
 from pathlib import Path
 sys.path.insert(0, ".")
@@ -6,21 +11,25 @@ import short as S
 RUSH = "/home/lexoyo/2026-08-31 16-41-36.mp4"
 SRT = "/home/lexoyo/Vidéos/Screencasts/2026-08-31 16-41-36_montage/deliverable/final.en.srt"
 OUT = Path("shorts3/SHORT-3-layer-name.mp4")
-F = S.FONT
 start, end = S.snap(S.cues(SRT), 260.0, 305.0)
-dur = end - start
 TITLE = "The layer name is not the tag"
 
-g = [
-    f"color=c={S.BG}:s=1080x1920:d={dur}[bg]",
-    f"[0:v]trim={start}:{end},setpts=PTS-STARTPTS,crop=430:300:0:80,scale=1080:754[layers]",
-    f"[0:v]trim={start}:{end},setpts=PTS-STARTPTS,crop=660:300:1900:130,scale=1080:491[props]",
-    "[bg][layers]overlay=0:250:shortest=1[a]",
-    "[a][props]overlay=0:1040[b]",
-    f"[b]drawbox=x=0:y=1015:w=1080:h=4:color={S.ACCENT}@0.6:t=fill[c]",
-    f"[c]drawtext=fontfile={F}:text='{TITLE}':fontcolor=white:fontsize=54:x=(w-text_w)/2:y=95[d]",
-    f"[d]drawbox=x=(iw-160)/2:y=180:w=160:h=5:color={S.ACCENT}:t=fill[e]",
-    f"[e]drawtext=fontfile={F}:text='{S.CTA}':fontcolor={S.MUTED}:fontsize=32:x=(w-text_w)/2:y=1855[v]",
+#      début, fin,  x,    y,   w,   h      (même ratio 0.838 pour les deux: 1080x1289)
+SHOTS = [(0.0, 31.0,   0,  80, 430, 513),   # le panneau Layers
+         (31.0, end-start, 1888, 40, 665, 794)]  # les réglages, tag name
+
+parts, g = [], []
+for i, (a, b, x, y, w, h) in enumerate(SHOTS):
+    g.append(f"[0:v]trim={start+a}:{start+b},setpts=PTS-STARTPTS,"
+             f"crop={w}:{h}:{x}:{y},scale=1080:1289,setsar=1[s{i}]")
+    parts.append(f"[s{i}]")
+g.append("".join(parts) + f"concat=n={len(parts)}:v=1:a=0[screen]")
+g += [
+    f"color=c={S.BG}:s=1080x1920:d={end-start}[bg]",
+    "[bg][screen]overlay=0:230:shortest=1[b]",
+    f"[b]drawtext=fontfile={S.FONT}:text='{TITLE}':fontcolor=white:fontsize=54:x=(w-text_w)/2:y=95[c]",
+    f"[c]drawbox=x=(iw-160)/2:y=180:w=160:h=5:color={S.ACCENT}:t=fill[d]",
+    f"[d]drawtext=fontfile={S.FONT}:text='{S.CTA}':fontcolor={S.MUTED}:fontsize=32:x=(w-text_w)/2:y=1855[v]",
     f"[0:a]atrim={start}:{end},asetpts=PTS-STARTPTS[a0]",
 ]
 tmp = OUT.with_name("_tmp3.mp4")
@@ -38,4 +47,4 @@ subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(tmp), "-filter_complex"
                 "-preset", "medium", "-crf", "20", "-pix_fmt", "yuv420p",
                 "-c:a", "aac", "-b:a", "160k", str(OUT)], check=True)
 tmp.unlink(); subs.unlink()
-print(f"short 3 : rush {start:.1f}→{end:.1f}s  ({dur/S.SPEED:.1f}s finales), deux vignettes")
+print(f"short 3 : deux cadres, bascule à +31 s ({(end-start)/S.SPEED:.1f}s finales)")

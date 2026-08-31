@@ -135,6 +135,31 @@ raconte ça. La composition qui marche : deux vignettes empilées, séparées pa
 zone gauche en haut et la zone droite en bas. L'étape doit donc supporter **une ou deux
 vignettes par palier**, pas seulement un rectangle.
 
+### Comment le cadrage doit marcher — tranché par Alex le 31/08/2026
+
+> « ça "suit" la souris, en tous cas quand ça change de région puis reste un moment.
+> Je pense que le modèle le fera naturellement si on mélange la position de la souris avec
+> le transcript. »
+
+Deux conditions pour changer de cadre, pas une : la souris **change de région** ET **y
+reste**. Un aller-retour d'une seconde ne déclenche rien — sinon le cadre tremble.
+
+L'arbitrage ne se code pas en seuils : la position du curseur part dans
+`work/segments.json` à côté du texte, et **le brain décide**. Il a déjà les deux
+informations sous les yeux — « the names you see in the layers » avec un curseur à gauche,
+puis « here you see in the settings, the tag name » avec un curseur à droite. Le découpage
+en paliers tombe de lui-même.
+
+Vérifié à la main sur le short 3 : la bascule se lit dans le transcript à la seconde près
+(+31 s), et les deux cadres qui en découlent racontent exactement le propos. C'est ce
+découpage-là qu'il faut obtenir sans intervention humaine.
+
+⚠️ Deux cadres consécutifs de tailles différentes doivent porter `setsar=1` après le
+`scale`, sinon `concat` refuse de les joindre (leurs ratios diffèrent au millième).
+
+Alex ajoute qu'on pourra un jour appliquer le même principe à la **vidéo longue**. Pas
+maintenant : elle marche, on n'y touche pas.
+
 ### Vérification — la règle qui a été enfreinte trois fois
 
 **Une frame de contrôle par palier de cadrage**, pas une par short. Un cadre est fixe
