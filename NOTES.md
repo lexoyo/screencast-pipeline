@@ -81,6 +81,11 @@ Trois shorts ont été fabriqués **à la main** ce soir-là, dans un scratchpad
 dépôt. Ils ont servi de banc d'essai ; ce qui suit est ce qu'il faut reporter ici. Alex :
 « l'idée c'est pas que tu bricoles tout à la main ».
 
+**L'upload est hors périmètre** (Alex, 01/09/2026). L'étape produit des fichiers dans le
+livrable et s'arrête là — comme le reste du harnais, qui n'a jamais envoyé une vidéo nulle
+part. Publier reste une action humaine, sur une plateforme choisie par un humain. Aucune
+version future ne doit y ajouter d'appel d'API YouTube ou PeerTube.
+
 **L'étape doit rester hors de la séquence par défaut** (comme `plan` et `doctor`) : un
 short se demande, il ne se produit pas à chaque tournage. Rien de ce qui suit ne doit
 toucher aux neuf étapes qui rendent la vidéo longue.
