@@ -1,6 +1,7 @@
 """The command line: one binary, a few verbs.
 
     screencast new                 latest OBS recording -> full deliverable
+    screencast new <rush.mkv>      that recording, when it is not the latest
     screencast run <stage> <ep>    a single stage, when iterating
     screencast doctor              resolved config + which tools are missing
 
