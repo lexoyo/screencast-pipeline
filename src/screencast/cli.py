@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from math import gcd
 from pathlib import Path
 from shutil import which
 
@@ -34,8 +35,8 @@ from . import (
 from .channel import ChannelError
 from .channel import load as load_channel
 from .config import ConfigError, describe, load
-from .episode import Episode, MissingInput
-from .shell import ToolError, log, set_log_file
+from .episode import Episode, MissingInput, open_episode
+from .shell import ToolError, ffprobe_dimensions, log, set_log_file
 from .timeline import TimelineError
 
 PROMPTS = Path(__file__).resolve().parent / "prompts"
@@ -279,12 +280,15 @@ def _run_pipeline(root: Path, cfg, stages) -> int:
             print(f"  ✗ {item}", file=sys.stderr)
         return 1
 
-    ep = Episode(root=root, cfg=cfg)
-    ep.ensure_dirs()
+    # Paths don't depend on the output frame, so an unresolved episode is enough to make
+    # the working directory and take the lock. The frame is measured after the log file is
+    # set, so that what it resolved to is written down rather than only printed.
+    paths = Episode(root=root, cfg=cfg)
+    paths.ensure_dirs()
 
     # One run per episode. Two concurrent runs write the same transcript and the same
     # segment files, and the result is silently wrong rather than loudly broken.
-    lock = ep.work / "running.pid"
+    lock = paths.work / "running.pid"
     if lock.is_file():
         pid = lock.read_text().strip()
         if pid.isdigit() and Path(f"/proc/{pid}").exists():
@@ -293,7 +297,8 @@ def _run_pipeline(root: Path, cfg, stages) -> int:
             return 1
     lock.write_text(str(os.getpid()))
 
-    set_log_file(ep.log_file)
+    set_log_file(paths.log_file)
+    ep = open_episode(root, cfg)
     try:
         for name in stages:
             run_stage(name, ep)
@@ -307,7 +312,7 @@ def _run_pipeline(root: Path, cfg, stages) -> int:
 
 def cmd_plan(args, cfg) -> int:
     """Show where the slides land, without rendering anything."""
-    ep = Episode(root=Path(args.episode).resolve(), cfg=cfg)
+    ep = open_episode(Path(args.episode).resolve(), cfg)
     ep.ensure_dirs()
     set_log_file(ep.log_file)
     try:
@@ -347,7 +352,34 @@ def cmd_doctor(args, cfg) -> int:
     print(f"  {'✓' if found or not cfg.music else '✗'} {cfg.sonorita_bin:12s} {state}")
     missing += cfg.music and not found
     print(f"\nrecordings: {RECORDINGS}")
+    _report_frame(cfg)
     return 1 if missing else 0
+
+
+def _report_frame(cfg) -> None:
+    """What the next run would render at, and what the rushes actually are.
+
+    Worth printing because the answer used to be assumed rather than measured, and the day
+    the assumption broke — a shoot on a 16:10 laptop screen instead of the 16:9 monitor —
+    nothing said so. The video simply came out with its top and bottom cropped away.
+    """
+    pinned = f"{cfg.out_w or '·'}x{cfg.out_h or '·'}"
+    rushes = [("screen", _newest_recording(RECORDINGS)),
+              ("camera", _newest_recording(RECORDINGS / "cam"))]
+    print(f"\nframe: OUT_W/OUT_H = {pinned}" + ("" if cfg.out_w and cfg.out_h else
+          "  (empty = taken from the screen rush)"))
+    for label, path in rushes:
+        if path is None:
+            print(f"  · {label:7s} none found")
+            continue
+        dims = ffprobe_dimensions(path)
+        shape = f"{dims[0]}x{dims[1]}  ({_ratio(*dims)})" if dims else "unreadable"
+        print(f"  · {label:7s} {shape}  {path.name}")
+
+
+def _ratio(width: int, height: int) -> str:
+    divisor = gcd(width, height)
+    return f"{width // divisor}:{height // divisor}"
 
 
 def main(argv: list[str] | None = None) -> int:

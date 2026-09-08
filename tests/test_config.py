@@ -43,9 +43,22 @@ def _write(tmp_path, text):
 
 def test_load_applies_defaults(tmp_path):
     cfg = load(_write(tmp_path, MINIMAL))
-    assert cfg.out_w == 1920
+    # An unset frame is None, not 1920x1080: it means "measure the rush", and only
+    # episode.open_episode can answer that.
+    assert cfg.out_w is None
+    assert cfg.out_h is None
     assert cfg.mic_source == "screen"
     assert cfg.claude_bin == "claude"
+
+
+def test_an_explicit_frame_is_kept(tmp_path):
+    cfg = load(_write(tmp_path, MINIMAL + 'OUT_W="1920"\nOUT_H="1080"\n'))
+    assert (cfg.out_w, cfg.out_h) == (1920, 1080)
+
+
+def test_a_negative_frame_is_refused(tmp_path):
+    with pytest.raises(ConfigError):
+        load(_write(tmp_path, MINIMAL + 'OUT_W="-10"\n'))
 
 
 def test_load_expands_home_in_the_brain_command(tmp_path):

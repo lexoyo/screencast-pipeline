@@ -4,8 +4,14 @@
  * PNG must carry an alpha channel. Templates that are meant to be full-frame (intro,
  * outro) paint their own background over it. */
 * { margin: 0; padding: 0; box-sizing: border-box; }
-html, body {
-  width: 1920px; height: 1080px;
+/* Every rule below is written in the design's own 1920px-wide space. `zoom` maps that
+ * space onto whatever frame the rush dictates, so a 2560x1600 episode gets the same
+ * layout drawn larger — not the same PNG stretched, which is what a plain ffmpeg scale
+ * would have done to a 16:9 card on a 16:10 frame. */
+html { width: ${frame_w}px; height: ${frame_h}px; }
+body {
+  zoom: $frame_zoom;
+  width: ${design_w}px; height: ${design_h}px;
   background: transparent;
   font-family: var(--font);
   -webkit-font-smoothing: antialiased;

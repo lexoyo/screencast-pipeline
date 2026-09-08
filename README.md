@@ -233,8 +233,11 @@ mid-take loses the whole file, where an MKV stays readable to the last written f
 default, so desktop audio lands mixed into your voice — and a mix does not unmix. The
 harness reads track 1 and applies *speech*-tuned processing to it.
 
-**Enlarge your terminal font.** A 1440p screen rendered to 1080p shrinks everything by a
-quarter; text that is comfortable while you record is unreadable on a phone.
+**Enlarge your terminal font.** The video now keeps the screen at its native size, so
+nothing shrinks on the way out — but a phone screen is still a phone screen, and text that
+is comfortable while you record is unreadable on one. (Pin `OUT_W` in config.env to render
+smaller than the rush; the height then follows the rush's ratio rather than being cropped
+to fit.)
 
 **Light your face.** The correction is clamped on purpose — past a point it turns skin
 orange. A lamp facing you beats any filter, and `measure` tells you when it is needed.

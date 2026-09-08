@@ -35,14 +35,17 @@ def render_all(ep: Episode, layout: SlidePlan) -> tuple[list[Path], list[Path]]:
     exported.
     """
     ep.slidedir.mkdir(parents=True, exist_ok=True)
+    # Drawn straight at the output frame: an overlay is composited pixel for pixel, so a
+    # card rendered at another size would be either misaligned or resampled.
+    frame = {"width": ep.cfg.out_w, "height": ep.cfg.out_h}
     cards = [
         slides.render(card.kind, card.values, ep.slidedir / f"card{index:02d}.png",
-                      theme=layout.theme)
+                      theme=layout.theme, **frame)
         for index, card in enumerate(layout.cards)
     ]
     overlays = [
         slides.render(overlay.kind, _overlay_values(overlay),
-                      ep.slidedir / f"overlay{index:02d}.png", theme=layout.theme)
+                      ep.slidedir / f"overlay{index:02d}.png", theme=layout.theme, **frame)
         for index, overlay in enumerate(layout.overlays)
     ]
     return cards, overlays
@@ -64,7 +67,7 @@ def render_card(ep: Episode, card: Card, index: int, *, audio: Path | None = Non
     """Turn a card into a video segment, silent unless music is supplied."""
     cfg = ep.cfg
     image = slides.render(card.kind, card.values, ep.slidedir / f"card{index:02d}.png",
-                          theme=theme)
+                          theme=theme, width=cfg.out_w, height=cfg.out_h)
     out = ep.segdir / f"card{index:02d}.mp4"
 
     args: list[str | Path] = ["-loop", "1", "-t", str(card.duration), "-i", image]

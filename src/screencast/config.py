@@ -84,8 +84,10 @@ class Config:
     silence_pad: float
 
     # -- output
-    out_w: int
-    out_h: int
+    # None on either axis means "take it from the screen rush" — resolved by
+    # episode.open_episode before any stage runs, so every consumer still reads an int.
+    out_w: int | None
+    out_h: int | None
     out_fps: int
     draft_crf: int
 
@@ -198,16 +200,28 @@ def load(config_path: Path, overrides: dict[str, str] | None = None) -> Config:
         silence_db=_get(raw, "SILENCE_DB", "-30dB"),
         silence_min=_num(raw, "SILENCE_MIN", "0.6", float),
         silence_pad=_num(raw, "SILENCE_PAD", "0.15", float),
-        out_w=_num(raw, "OUT_W", "1920", int),
-        out_h=_num(raw, "OUT_H", "1080", int),
+        out_w=(_num(raw, "OUT_W", "0", int) if raw.get("OUT_W") else None),
+        out_h=(_num(raw, "OUT_H", "0", int) if raw.get("OUT_H") else None),
         out_fps=_num(raw, "OUT_FPS", "30", int),
         draft_crf=_num(raw, "DRAFT_CRF", "20", int),
     )
 
     if cfg.zoom_scale <= 1.0:
         raise ConfigError(f"config.env: ZOOM_SCALE={cfg.zoom_scale} must be greater than 1")
-    if cfg.out_w <= 0 or cfg.out_h <= 0 or cfg.out_fps <= 0:
-        raise ConfigError("config.env: OUT_W, OUT_H and OUT_FPS must all be positive")
+    if cfg.out_fps <= 0:
+        raise ConfigError("config.env: OUT_FPS must be positive")
+    for name, value in (("OUT_W", cfg.out_w), ("OUT_H", cfg.out_h)):
+        if value is None:
+            continue
+        if value <= 0:
+            raise ConfigError(f"config.env: {name}={value} must be positive, or empty to "
+                              "match the screen rush")
+        # A dimension derived from the rush is rounded to an even number; one written here
+        # by hand is not, because silently editing a value someone typed is worse than
+        # refusing it. libx264 with yuv420p rejects odd frames outright.
+        if value % 2:
+            raise ConfigError(f"config.env: {name}={value} must be even — libx264 cannot "
+                              "encode an odd frame")
     return cfg
 
 

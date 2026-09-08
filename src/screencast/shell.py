@@ -121,6 +121,29 @@ def ffprobe_duration(path: Path) -> float:
         return 0.0
 
 
+def ffprobe_dimensions(path: Path) -> tuple[int, int] | None:
+    """The first video stream's pixel size, None if the file can't be probed.
+
+    The pipeline used to assume every rush was 16:9 and hard-code 1920x1080 as the output
+    frame. That held until a shoot came off a 16:10 laptop screen: the fill filter then
+    cropped a tenth of the height away in silence — the title bar off the top, the dock
+    off the bottom. The frame is measured now rather than assumed.
+    """
+    proc = run(
+        [
+            "ffprobe", "-v", "error", "-select_streams", "v:0",
+            "-show_entries", "stream=width,height", "-of", "csv=p=0", path,
+        ],
+        capture=True,
+        allow_fail=True,
+    )
+    try:
+        width, height = (int(part) for part in proc.stdout.strip().split(",")[:2])
+    except ValueError:
+        return None
+    return (width, height) if width > 0 and height > 0 else None
+
+
 def ffmpeg(args: list[str | Path], *, allow_fail: bool = False, quiet: bool = True):
     """ffmpeg with the flags we always want: no banner, errors only, overwrite."""
     base: list[str | Path] = ["ffmpeg", "-y", "-hide_banner"]

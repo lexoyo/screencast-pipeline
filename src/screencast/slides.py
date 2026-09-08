@@ -5,7 +5,7 @@ values, it never produces markup. That is what keeps one video looking like the 
 what makes it impossible for a bad generation to emit broken HTML into a render.
 
 Chromium rather than Playwright, deliberately: Fedora already ships it, it screenshots a
-1920x1080 page with transparency in under a second, and the alternative would drag Node,
+full-frame page with transparency in under a second, and the alternative would drag Node,
 npm and a second 150 MB browser into a project that has no dependencies at all. There is
 nothing to wait for in a static page, which is the only thing Playwright would buy us.
 """
@@ -59,14 +59,35 @@ def _chromium() -> str:
     )
 
 
-def fill(template: str, theme: str, values: dict[str, str]) -> str:
+DESIGN_W = 1920
+"""The width every template's px values are written against."""
+
+
+def frame_css(width: int, height: int) -> dict[str, object]:
+    """The four numbers _base.css needs to map the design onto an arbitrary frame."""
+    zoom = width / DESIGN_W
+    return {
+        "frame_w": width,
+        "frame_h": height,
+        "frame_zoom": f"{zoom:.6f}".rstrip("0").rstrip("."),
+        "design_w": DESIGN_W,
+        "design_h": round(height / zoom),
+    }
+
+
+def fill(template: str, theme: str, values: dict[str, str],
+         *, frame: dict[str, object] | None = None) -> str:
     """Substitute $placeholders, leaving CSS braces alone.
 
     string.Template rather than str.format precisely because of those braces: a stylesheet
     is mostly `{` and `}`, and format() would choke on every rule. Missing keys become
     empty strings so a template with an optional subtitle still renders.
     """
-    base = (TEMPLATES / "_base.css").read_text()
+    # _base.css is substituted first: safe_substitute makes a single pass, so a
+    # placeholder inside the text it injects would survive into the stylesheet verbatim.
+    base = Template((TEMPLATES / "_base.css").read_text()).safe_substitute(
+        frame or frame_css(DESIGN_W, 1080)
+    )
     filled = {key: html.escape(str(value)) for key, value in values.items()}
     # `items` is markup we generated ourselves (the <li> list), so it must not be escaped
     if "items" in values:
@@ -88,7 +109,7 @@ def render(
     out: Path,
     *,
     theme: str = "alexhoyau",
-    width: int = 1920,
+    width: int = DESIGN_W,
     height: int = 1080,
 ) -> Path:
     """Fill the `kind` template and screenshot it to `out`."""
@@ -101,7 +122,10 @@ def render(
 
     out.parent.mkdir(parents=True, exist_ok=True)
     page = out.with_suffix(".html")
-    page.write_text(fill(template_path.read_text(), theme_path.read_text(), values))
+    page.write_text(
+        fill(template_path.read_text(), theme_path.read_text(), values,
+             frame=frame_css(width, height))
+    )
 
     proc = subprocess.run(
         [

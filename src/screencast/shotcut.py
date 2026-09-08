@@ -7,6 +7,7 @@ shot once, the close-up once, for the whole project.
 
 from __future__ import annotations
 
+from math import gcd
 from pathlib import Path
 
 from .episode import Episode
@@ -23,6 +24,17 @@ def _entry(producer: str, start: float, end: float) -> str:
 
 def _blank(duration: float) -> str:
     return f'    <blank length="{tc(duration)}"/>'
+
+
+def display_aspect(width: int, height: int) -> tuple[int, int]:
+    """The frame's aspect as MLT wants it, reduced.
+
+    It used to be written 16:9 whatever the frame was. A 16:10 project then opened in
+    Shotcut with every clip squeezed sideways, because MLT believes the profile over the
+    pixels.
+    """
+    divisor = gcd(width, height)
+    return width // divisor, height // divisor
 
 
 def _size_position(rect: str) -> str:
@@ -126,6 +138,8 @@ def build(ep: Episode, plan: Edl, layout: SlidePlan | None = None) -> str:
     face_dur = ffprobe_duration(face) if face else screen_dur
     offset = camera_offset(ep)
     total = sum(seg.duration for seg in kept)
+
+    dar_w, dar_h = display_aspect(cfg.out_w, cfg.out_h)
 
     full_frame = f"0 0 {cfg.out_w} {cfg.out_h} 1"
     zoom_x = -(cfg.zoom_scale - 1) / 2 * cfg.out_w
@@ -256,8 +270,8 @@ def build(ep: Episode, plan: Edl, layout: SlidePlan | None = None) -> str:
     nl = "\n"
     return f"""<?xml version="1.0" encoding="utf-8"?>
 <mlt LC_NUMERIC="C" version="7.40.0" title="screencast">
-  <profile description="HD 1080p {cfg.out_fps} fps" width="{cfg.out_w}" height="{cfg.out_h}" progressive="1"
-    sample_aspect_num="1" sample_aspect_den="1" display_aspect_num="16" display_aspect_den="9"
+  <profile description="{cfg.out_h}p {cfg.out_fps} fps" width="{cfg.out_w}" height="{cfg.out_h}" progressive="1"
+    sample_aspect_num="1" sample_aspect_den="1" display_aspect_num="{dar_w}" display_aspect_den="{dar_h}"
     frame_rate_num="{cfg.out_fps}" frame_rate_den="1" colorspace="709"/>
   <producer id="black" out="{tc(total)}"><property name="length">{tc(total)}</property><property name="mlt_service">color</property><property name="resource">0</property></producer>
   <chain id="screen_v" out="{tc(screen_dur)}"><property name="length">{tc(screen_dur)}</property><property name="resource">{screen}</property><property name="mlt_service">avformat-novalidate</property><property name="audio_index">-1</property></chain>

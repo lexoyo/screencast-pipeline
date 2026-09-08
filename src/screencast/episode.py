@@ -7,10 +7,11 @@ wrong stage. Now the layout is declared here and nowhere else.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from .config import Config
+from .shell import ffprobe_dimensions, log
 
 CONTAINERS = (".mkv", ".mp4", ".mov", ".webm")
 
@@ -184,3 +185,42 @@ class Episode:
         if self.lang_file.is_file():
             return self.lang_file.read_text().strip() or default
         return default
+
+
+def _even(value: float) -> int:
+    """Round to an even number: libx264 with yuv420p refuses odd dimensions."""
+    return max(2, int(round(value / 2)) * 2)
+
+
+def open_episode(root: Path, cfg: Config) -> Episode:
+    """The episode, with its output frame resolved against the screen rush.
+
+    OUT_W and OUT_H are empty by default, which means "whatever the rush is". A screencast
+    reads its own sharpness: rendering a 2560x1600 capture at its native size means the
+    interface is never resampled at all, and — the reason this exists — nothing is cropped
+    away to force a shape the rush never had.
+
+    Setting one axis pins it and derives the other from the rush's ratio; setting both is
+    an explicit override, the old behaviour. A shoot with no screen rush keeps 1920x1080,
+    because there is nothing to measure and a stage that needs the file will say so with a
+    better message than a probe failure here.
+    """
+    ep = Episode(root=root, cfg=cfg)
+    if cfg.out_w and cfg.out_h:
+        return ep
+
+    dims = ffprobe_dimensions(ep.screen) if ep.screen.is_file() else None
+    if dims is None:
+        width, height = cfg.out_w or 1920, cfg.out_h or 1080
+        log(f"frame: {width}x{height} (the screen rush could not be measured)")
+        return replace(ep, cfg=replace(cfg, out_w=width, out_h=height))
+
+    rush_w, rush_h = dims
+    if cfg.out_w:
+        width, height = cfg.out_w, _even(cfg.out_w * rush_h / rush_w)
+    elif cfg.out_h:
+        width, height = _even(cfg.out_h * rush_w / rush_h), cfg.out_h
+    else:
+        width, height = _even(rush_w), _even(rush_h)
+    log(f"frame: {width}x{height} (screen rush {rush_w}x{rush_h})")
+    return replace(ep, cfg=replace(cfg, out_w=width, out_h=height))

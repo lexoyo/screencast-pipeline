@@ -92,8 +92,9 @@ toucher aux neuf étapes qui rendent la vidéo longue.
 
 ### Ce qui a marché, à garder
 
-- **Tailler dans le RUSH, pas dans le montage.** Le rush est en 2560x1440, `final.mp4` en
-  1920x1080 : cadrer serré dans le second revient à zoomer une image déjà réduite. La
+- **Tailler dans le RUSH, pas dans le montage.** Le rush et `final.mp4` ont désormais la
+  même taille par défaut (cf. `OUT_W`/`OUT_H` vides), mais dès que l'un des deux est
+  épinglé, cadrer serré dans le montage revient à zoomer une image déjà réduite. La
   conversion est simple tant qu'il n'y a pas de coupe : `rush = montage - durée des cartons
   insérés avant l'extrait`.
 - **Bornes sur des frontières de cues**, jamais sur des secondes rondes — sinon ça coupe au
