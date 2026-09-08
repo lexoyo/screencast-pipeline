@@ -44,7 +44,9 @@ def build(deliverable: Path, title: str, chapters: list[tuple[str, str]], langua
         "Dans l'onglet **Sous-titres** de la vidéo, pas dans les paramètres de la chaîne.",
         "",
         f"- langue de la vidéo : **{language}**",
-        f"- téléverser `final.{language}.srt` (« sans minutage » — le fichier porte le sien)",
+        f"- téléverser `final.{language}.srt`, en répondant **« avec minutage »** — un SRT",
+        "  porte ses propres timecodes ; « sans minutage » est pour un texte brut que YouTube",
+        "  doit resynchroniser, et il rejette le fichier",
     ]
     for extra in others:
         code = extra.split(".")[-2]
