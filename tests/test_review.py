@@ -6,6 +6,7 @@ from screencast.review import (
     check_cut,
     collect,
     completes_a_sentence,
+    dangles,
     ends_sentence,
     longest_run,
     normalize,
@@ -166,3 +167,26 @@ def test_both_cards_present_is_silent():
         metadata={"intro": {"title": "Goose"}, "outro": {"title": "Merci"}},
     )
     assert check_bookends(plan) == []
+
+
+# ---- junctions the cut leaves hanging
+
+
+def test_a_cut_that_takes_away_what_the_last_word_introduced_is_reported():
+    # "Revenons à Goose si | Donc Goose, vous activez ce que vous voulez." — the "si"
+    # dangles, and the capital on "Donc" is why the first version of this check missed it
+    cut = _cut(["j'y", "arrive."], before=["Revenons", "a", "Goose", "si"],
+               after=["Donc", "Goose,", "vous", "activez"], reason="fumble")
+    assert dangles(cut) == "si"
+    assert "en suspens" in check_cut(cut)[0].what
+
+
+def test_a_conjunction_can_end_the_kept_text_because_the_next_words_chain_on():
+    # "on l'installe alors | là non voilà c'est flathub" reads perfectly
+    cut = _cut(["euh"], before=["on", "l'installe", "alors"], after=["la", "non", "voila"])
+    assert dangles(cut) == ""
+
+
+def test_a_comma_is_a_pause_not_a_dangling_word():
+    cut = _cut(["euh"], before=["en", "HTML", "ou", "quoi,"], after=["ca", "me", "fait"])
+    assert dangles(cut) == ""

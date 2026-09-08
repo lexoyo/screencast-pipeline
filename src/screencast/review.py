@@ -259,6 +259,14 @@ def check_cut(cut: Cut) -> list[Issue]:
     reason = cut.span.reason
     issues: list[Issue] = []
 
+    hanging = dangles(cut)
+    if hanging:
+        issues.append(Issue(
+            "à revoir", where,
+            f"le raccord laisse « {hanging} » en suspens",
+            "la coupe emporte ce que ce mot introduisait — le montage dira la phrase tronquée",
+        ))
+
     if not cut.words:
         # Nothing was said in there: whatever the label, no content left with it. The
         # audio side of this — is the silence real — is `cuts.has_measured_silence`, and
@@ -343,6 +351,38 @@ def check_bookends(plan: Edl) -> list[Issue]:
 
 def mechanical(plan: Edl, cuts: list[Cut]) -> list[Issue]:
     return check_bookends(plan) + [issue for cut in cuts for issue in check_cut(cut)]
+
+
+# Words a French sentence cannot end on. When the kept text stops on one of these, the
+# cut took away what it introduced and the join is audibly broken — "Revenons à Goose si"
+# followed by "Donc Goose, vous activez ce que vous voulez". Capitalisation is no help
+# here: whisper capitalises after a pause, so the next word looked like a fresh sentence
+# and the junction passed unnoticed into a rendered video.
+DANGLING = frozenset([
+    # subordinators and interrogatives
+    "si", "que", "qui", "quoi", "dont", "parce", "puisque", "lorsque", "quand", "comme",
+    # prepositions
+    "pour", "par", "dans", "de", "du", "des", "a", "au", "aux", "en", "sur", "sous",
+    "avec", "sans", "chez", "vers", "entre", "depuis",
+    # determiners
+    "le", "la", "les", "un", "une", "mon", "ma", "mes", "ton", "ta", "tes", "son", "sa",
+    "ses", "ce", "cet", "cette", "ces", "leur", "leurs",
+    # pronouns
+    "je", "tu", "il", "elle", "on", "nous", "vous", "ils", "elles", "me", "te", "se",
+    "lui", "y",
+])
+
+
+def dangles(cut: Cut) -> str:
+    """The word left hanging by this cut, if the kept text stops on one."""
+    if not cut.before:
+        return ""
+    last = cut.before[-1]["text"]
+    if ends_sentence(last) or last.rstrip("»\"')").endswith(","):
+        # A comma is a marked pause: the speaker stopped there on purpose, and the join
+        # lands on a breath rather than mid-clause.
+        return ""
+    return last if normalize(last) in DANGLING else ""
 
 
 def broken_junctions(cuts: list[Cut]) -> list[Cut]:
