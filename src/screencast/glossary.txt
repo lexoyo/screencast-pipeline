@@ -14,8 +14,10 @@
 
 # The subject of the current videos.
 Goose = GUZ, Gouz, Gouze, Gousse, Gooz
-Claude Code = Cloudcode, Cloud code, Cloud Cowork, Clode code, Claudecode
+goose-docs.ai = guz-docs.ai, gouz-docs.ai, gooz-docs.ai
+Claude Code = Cloudcode, Cloud code, Clode code, Claudecode
 Codex = Codexe, Codex e
+Claude Cowork = Cloud Cowork, Cowork, Claude Co-work
 Ollama = Olama, O Lama, Aulama
 LM Studio = LMStudio
 llamafile = lama file, llama file, LamaFile
@@ -49,4 +51,5 @@ MKV = M K V, em ka vé
 Flathub = Flat hub
 ordi = ARDI, hardi
 prompt = prompte
+prompts = promptes
 prompter = prompté
