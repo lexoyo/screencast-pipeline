@@ -6,6 +6,7 @@ from screencast.review import (
     check_cut,
     collect,
     completes_a_sentence,
+    ends_sentence,
     longest_run,
     normalize,
     repeat_is_real,
@@ -109,11 +110,35 @@ def test_a_repeat_that_is_said_only_once_is_reported():
     assert [i.severity for i in check_cut(cut)] == ["à revoir"]
 
 
-def test_a_filler_that_finishes_a_sentence_is_not_a_filler():
-    # "même le gars qui a créé Twitter, je crois, je suis pas sûr." — that is content
-    cut = _cut(["je", "crois,", "pas", "sur."], reason="filler", start=10.0, end=11.5)
-    assert completes_a_sentence(cut.words)
+def test_a_filler_carrying_a_whole_sentence_is_reported():
+    # "Le scheduleur, donc c'est ce que je vous ai dit." — ten words, two seconds, content
+    cut = _cut(["Le", "scheduleur,", "donc", "c'est", "ce", "que", "je", "vous", "ai", "dit."],
+               reason="filler", start=10.0, end=12.0)
+    assert [i.severity for i in check_cut(cut)] == ["à revoir"]
+
+
+def test_a_false_start_that_was_carried_to_the_end_is_reported_as_such():
+    # "Salut tout le monde, alors une petite vidéo un peu méta quoi." — said, not abandoned
+    cut = _cut(["Salut", "tout", "le", "monde,", "alors", "une", "petite", "video", "un", "peu", "meta", "quoi."],
+               reason="falsestart", start=10.0, end=13.3)
     assert "phrase terminée" in check_cut(cut)[0].what
+
+
+def test_a_short_punctuated_tic_stays_a_filler():
+    # "Et voilà." is a sentence by the letter and a filler by the ear
+    cut = _cut(["Et", "voila."], reason="filler", start=10.0, end=11.3)
+    assert completes_a_sentence(cut.words)
+    assert check_cut(cut) == []
+
+
+def test_trailing_dots_mark_an_abandoned_phrase_not_a_finished_one():
+    # "permet d'écrire du..." is exactly what a false start looks like
+    assert not ends_sentence("du...")
+    assert not ends_sentence("cette…")
+    assert ends_sentence("dit.")
+    cut = _cut(["cette...", "Trust", "and", "execute,", "oui,", "oui,", "oui,"],
+               reason="falsestart", start=10.0, end=13.6)
+    assert check_cut(cut) == []
 
 
 def test_a_cut_with_no_speech_in_it_is_never_reported():

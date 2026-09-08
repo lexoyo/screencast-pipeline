@@ -45,7 +45,12 @@ from .timeline import Chapter, Edl, Span
 # Punctuation stripped before two words are compared. Accents stay: they are part of the
 # word in French, and "repete" must not match "répète" by accident.
 EDGE_PUNCT = "«»\"'“”‘’.,;:!?…()[]{}—–- "
-SENTENCE_END = (".", "!", "?", "…")
+SENTENCE_END = (".", "!", "?")
+# Not a sentence end: trailing dots are how whisper writes a phrase left hanging, which is
+# the definition of a false start. Counting them as "finished" accused two real cuts —
+# "permet d'écrire du..." and "cette... Trust and execute, oui, oui, oui," — of removing a
+# sentence that was precisely never finished.
+ELLIPSIS = ("…", "..")
 
 # Thresholds, calibrated on the seven episodes shot so far rather than chosen a priori.
 # They do not say whether a cut is good — they say whether the label the model put on it
@@ -215,6 +220,12 @@ def repeat_is_real(cut: Cut, ratio: float = 0.5) -> bool:
     return longest_run(removed, context) >= max(1, ceil(len(removed) * ratio))
 
 
+def ends_sentence(text: str) -> bool:
+    """Does this word close a sentence? An ellipsis does the opposite."""
+    text = text.rstrip("»\"')")
+    return not text.endswith(ELLIPSIS) and text.endswith(SENTENCE_END)
+
+
 def completes_a_sentence(words: list[dict]) -> bool:
     """Does the removed text carry a finished sentence?
 
@@ -222,7 +233,23 @@ def completes_a_sentence(words: list[dict]) -> bool:
     and punctuates is a thought that was expressed, and removing it removes content,
     whatever label the model put on it.
     """
-    return any(word["text"].rstrip("»\"')").endswith(SENTENCE_END) for word in words)
+    return any(ends_sentence(word["text"]) for word in words)
+
+
+# Below this, a punctuated fragment is still a tic: "Et voilà.", "Il faut dire ce qu'il y
+# a." are sentences by the letter and filler by the ear. The check earns its keep on
+# "Le scheduleur, donc c'est ce que je vous ai dit." — ten words, two seconds, and content.
+SENTENCE_MIN_SECONDS = 1.5
+SENTENCE_MIN_WORDS = 5
+
+
+def carries_content(cut: Cut) -> bool:
+    """A finished sentence, long enough that removing it removes something."""
+    return (
+        cut.span.duration > SENTENCE_MIN_SECONDS
+        and len(cut.words) >= SENTENCE_MIN_WORDS
+        and completes_a_sentence(cut.words)
+    )
 
 
 def check_cut(cut: Cut) -> list[Issue]:
@@ -265,7 +292,7 @@ def check_cut(cut: Cut) -> list[Issue]:
                 f"au-delà de {FILLER_MAX_SECONDS:.0f} s ou {FILLER_MAX_WORDS} mots "
                 "ce n'est plus un tic de langage",
             ))
-        elif completes_a_sentence(cut.words):
+        elif carries_content(cut):
             issues.append(Issue(
                 "à revoir", where,
                 "motif « filler » sur une phrase terminée",
@@ -279,7 +306,7 @@ def check_cut(cut: Cut) -> list[Issue]:
                 f"motif « falsestart » pour {seconds:.1f} s",
                 f"un faux départ est abandonné vite, {FALSESTART_MAX_SECONDS:.0f} s au plus",
             ))
-        elif completes_a_sentence(cut.words):
+        elif carries_content(cut):
             issues.append(Issue(
                 "à revoir", where,
                 "motif « falsestart » sur une phrase terminée",
@@ -329,7 +356,7 @@ def broken_junctions(cuts: list[Cut]) -> list[Cut]:
         for cut in cuts
         if cut.before
         and cut.after
-        and not completes_a_sentence(cut.before[-1:])
+        and not ends_sentence(cut.before[-1]["text"])
         and not cut.after[0]["text"][:1].isupper()
     ]
 
