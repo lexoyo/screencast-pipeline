@@ -136,17 +136,21 @@ def mechanical(title: str, description: str, tags: list[str],
     ]
 
 
-def editorial(claude_bin: str, prompts_dir: Path, payload: dict, work: Path) -> list[Issue]:
-    """A separate process reads the copy. Never this one — that is the point."""
-    prompt = (prompts_dir / "qc.md").read_text()
+def editorial(claude_bin: str, prompts_dir: Path, payload: dict, work: Path,
+              prompt_name: str = "qc.md", step: str = "qc") -> list[Issue]:
+    """A separate process reads the copy. Never this one — that is the point.
+
+    The review stage reuses this: same contract, same JSON, a different prompt.
+    """
+    prompt = (prompts_dir / prompt_name).read_text()
     full = f"{prompt}\n\n## DATA\n{json.dumps(payload, ensure_ascii=False)}"
-    (work / "qc_prompt.txt").write_text(full)
+    (work / f"{step}_prompt.txt").write_text(full)
     try:
-        answer = brain(claude_bin, full, work, "qc")
-        (work / "qc_raw.txt").write_text(answer)
+        answer = brain(claude_bin, full, work, step)
+        (work / f"{step}_raw.txt").write_text(answer)
         data = json.loads(extract_json_object(strip_code_fences(answer)))
     except Exception as exc:  # noqa: BLE001 — no review must not cost the deliverable
-        log(f"⚠ QC éditorial indisponible: {exc}")
+        log(f"⚠ relecture éditoriale ({step}) indisponible: {exc}")
         return []
     return [
         Issue(

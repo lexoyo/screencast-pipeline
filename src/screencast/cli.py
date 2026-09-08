@@ -24,6 +24,7 @@ from . import (
     publish,
     qc,
     render,
+    review,
     shotcut,
     silences,
     slideplan,
@@ -35,6 +36,7 @@ from .channel import ChannelError
 from .channel import load as load_channel
 from .config import ConfigError, describe, load
 from .episode import Episode, MissingInput
+from .review import ReviewStopped
 from .shell import ToolError, log, set_log_file
 from .timeline import TimelineError
 
@@ -47,12 +49,14 @@ RECORDINGS = Path(os.environ.get("REC_DIR", Path.home() / "Videos" / "Screencast
 CONTAINERS = (".mkv", ".mp4", ".mov")
 
 CHANNEL = None  # set from --channel before any stage runs
+GATE = True  # cleared by --no-gate: the review then reports without stopping the run
 
 STAGES = (
     "measure",
     "transcribe",
     "silences",
     "montage",
+    "review",
     "render",
     "shotcut",
     "subtitles",
@@ -122,6 +126,11 @@ def run_stage(name: str, ep: Episode) -> None:
         silences.run(ep)
     elif name == "montage":
         montage.run_stage(ep, PROMPTS)
+    elif name == "review":
+        # Before the render, on purpose: the montage was decided on the text, so the text
+        # is where it costs the least to disagree with it. Everything downstream — ffmpeg,
+        # a second whisper pass, the music — is paid for after this.
+        review.run(ep, _plan(ep), PROMPTS, gate=GATE)
     elif name == "render":
         plan = _plan(ep)
         render.run(ep, plan, slideplan.build(plan, plan.kept, channel=CHANNEL.as_values()))
@@ -297,7 +306,7 @@ def _run_pipeline(root: Path, cfg, stages) -> int:
     try:
         for name in stages:
             run_stage(name, ep)
-    except (MissingInput, TimelineError, ToolError, ConfigError) as exc:
+    except (MissingInput, TimelineError, ToolError, ConfigError, ReviewStopped) as exc:
         log(f"STOPPED: {exc}")
         return 1
     finally:
@@ -367,6 +376,10 @@ def main(argv: list[str] | None = None) -> int:
     # one-off: editing the file for a single episode is how you forget to edit it back and
     # transcribe the next take in the wrong language. `auto` hands the choice to whisper.
     parser.add_argument(
+        "--no-gate", action="store_true",
+        help="the montage review reports but never stops the run",
+    )
+    parser.add_argument(
         "--no-music", action="store_true",
         help="skip the music under the cards (sonorita-cli is then not needed)",
     )
@@ -411,7 +424,8 @@ def main(argv: list[str] | None = None) -> int:
     except ConfigError as exc:
         print(f"config: {exc}", file=sys.stderr)
         return 2
-    global CHANNEL
+    global CHANNEL, GATE
+    GATE = not args.no_gate
     try:
         CHANNEL = load_channel(args.channel)
     except ChannelError as exc:
