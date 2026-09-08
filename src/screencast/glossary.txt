@@ -8,17 +8,33 @@
 # Case, accents and spacing are handled automatically — "hugging face" finds "Hugging
 # Face" on its own. Aliases are for PHONETIC mistakes, which cannot be guessed: "Cloudcode"
 # and "Claude Code" are simply different words. Add one the day a name comes out mangled.
+#
+# ORDER MATTERS. The prompt is capped, and the tail is what gets dropped — so the names of
+# what the channel is currently talking about go FIRST, and the general vocabulary last.
 
-Claude Code = Cloudcode, Cloud code, Clode code, Claudecode
+# The subject of the current videos.
+Goose = GUZ, Gouz, Gouze, Gousse, Gooz
+Claude Code = Cloudcode, Cloud code, Cloud Cowork, Clode code, Claudecode
+Codex = Codexe, Codex e
+Ollama = Olama, O Lama, Aulama
+LM Studio = LMStudio
+llamafile = lama file, llama file, LamaFile
 Jan = Djann, Jann, Djan
+OpenRouter = Open Router
+Qwen = Couen, Qwenn
+Anthropic = Antropique
+Hugging Face = huggingface
+
+# The channel's own tools and projects.
 Silex = Cylex, Silexe
 PeerTube = Peer Tube, Pertube
 ffmpeg = FFM peg, effe em peg
 whisper.cpp = whisper CPP, whisper c++
 Shotcut = Shot cut, Chotcut
 OBS = O B S, obès
-llamafile = lama file, llama file
-Hugging Face = huggingface
+WordPress = Word Press
+
+# General vocabulary. Long tail: may fall outside the prompt, still corrected afterwards.
 GitHub = Git Hub
 GitLab = Git Lab
 Mastodon
@@ -31,11 +47,6 @@ GPU
 VRAM = V RAM
 MKV = M K V, em ka vé
 Flathub = Flat hub
-OpenRouter = Open Router
-Qwen = Couen, Qwenn
-Anthropic = Antropique
-
-# Not proper nouns, but words whisper mangles on this channel anyway.
 ordi = ARDI, hardi
 prompt = prompte
 prompter = prompté

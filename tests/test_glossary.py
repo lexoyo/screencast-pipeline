@@ -120,3 +120,21 @@ def test_every_alias_maps_to_its_canonical_form():
     assert table["cloudcode"] == "Claude Code"
     assert table["claudecode"] == "Claude Code"
     assert table["djann"] == "Jan"
+
+
+def test_a_prompt_over_the_limit_stops_on_a_whole_name():
+    # observed: the real glossary overran by 32 characters and primed whisper on "An",
+    # half of "Anthropic" — a mangled name is exactly what the prompt is meant to prevent
+    long = parse("\n".join(f"Terme{i}" for i in range(40)))
+    prompt = as_prompt(long, limit=60)
+    assert len(prompt) <= 60
+    assert prompt.endswith(".")
+    assert all(name.startswith("Terme") and name[5:].isdigit()
+               for name in prompt.removeprefix("On parle ici de ").rstrip(".").split(", "))
+
+
+def test_the_glossary_shipped_with_the_pipeline_primes_on_its_subject():
+    # the tail is what a long glossary loses, so the current subject is kept first
+    from screencast.glossary import load
+    prompt = as_prompt(load())
+    assert "Goose" in prompt and "Claude Code" in prompt and "Ollama" in prompt

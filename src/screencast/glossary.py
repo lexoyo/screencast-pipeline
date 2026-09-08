@@ -81,7 +81,14 @@ def as_prompt(terms: dict[str, list[str]] | list[str], limit: int = 220,
     # Only the canonical spellings: priming whisper with the mistakes would teach it those.
     names = list(terms) if isinstance(terms, dict) else terms
     prompt = LEAD_IN.get(language, "") + ", ".join(names) + "."
-    return prompt[:limit]
+    if len(prompt) <= limit:
+        return prompt
+    # The glossary outgrew the limit long before anyone noticed: a plain slice cut
+    # "Anthropic" into "An", handing whisper a mangled name to prime on. Drop back to the
+    # last complete name instead — and since the tail is what gets dropped, the file is
+    # ordered with the names of the current subject first.
+    kept = prompt[:limit].rsplit(", ", 1)[0]
+    return kept + "."
 
 
 def _normalise(text: str) -> str:
