@@ -114,6 +114,11 @@ def corrections(terms: dict[str, list[str]]) -> dict[str, str]:
     return table
 
 
+def _tokens(form: str) -> int:
+    """How many alphanumeric tokens a glossary entry spans, as `fix` splits text."""
+    return sum(1 for token in re.split(r"(\W+)", form) if token and token.isalnum())
+
+
 def fix(text: str, terms: dict[str, list[str]]) -> tuple[str, list[tuple[str, str]]]:
     """Replace mis-transcribed terms, and report what was changed.
 
@@ -127,7 +132,12 @@ def fix(text: str, terms: dict[str, list[str]]) -> tuple[str, list[tuple[str, st
     if not terms:
         return text, []
     table = corrections(terms)
-    longest = max(len(form.split()) for forms in
+    # Counted in TOKENS, the way the matcher below splits text — not in space-separated
+    # words. "goose-docs.ai" holds no space, so as a word count it is 1, while recognising
+    # it takes looking at three tokens (guz, docs, ai). Domain names were only ever caught
+    # because an unrelated entry — "MKV = M K V, em ka vé" — happened to push this to 3.
+    # Deleting that line would have silently stopped correcting every domain in the file.
+    longest = max(_tokens(form) for forms in
                   ([c, *a] for c, a in terms.items()) for form in forms)
     changed: list[tuple[str, str]] = []
 

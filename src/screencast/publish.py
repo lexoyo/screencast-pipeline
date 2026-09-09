@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from . import lang, upload
+from . import glossary, lang, upload
 from .episode import Episode
 from .parsing import extract_json_object, strip_code_fences
 
@@ -56,6 +56,24 @@ def metadata_text(plan: Edl, rows: list[tuple[float, str]], links: list[dict] | 
     return "\n".join(lines) + "\n"
 
 
+def fix_names(data: dict, terms: dict[str, list[str]]) -> dict:
+    """Run the glossary over every string a model wrote.
+
+    The glossary is applied to what whisper HEARD, never to what a model WRITES — and a
+    translation rewrites every sentence from scratch. That is how "goose-docs.ai", correct
+    in the French description, came back as "guz-docs.ai" in the English one: the install
+    URL of the video, pointing nowhere. QC caught it, but only because someone had added
+    the alias the day before.
+    """
+    out = dict(data)
+    for key, value in out.items():
+        if isinstance(value, str):
+            out[key] = glossary.fix(value, terms)[0]
+        elif isinstance(value, list):
+            out[key] = [glossary.fix(v, terms)[0] if isinstance(v, str) else v for v in value]
+    return out
+
+
 def translate_metadata(ep: Episode, prompts_dir: Path, plan: Edl,
                        rows: list[tuple[float, str]], target: str) -> dict | None:
     """Title, description, tags and chapter labels in the deliverable's other language.
@@ -87,6 +105,8 @@ def translate_metadata(ep: Episode, prompts_dir: Path, plan: Edl,
     except Exception as exc:  # noqa: BLE001 — a missing translation must not cost the deliverable
         log(f"⚠ metadata {target.upper()} skipped: {exc}")
         return None
+
+    data = fix_names(data, glossary.load())
 
     labels = data.get("chapters") or []
     if len(labels) != len(rows):

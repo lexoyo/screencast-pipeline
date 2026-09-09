@@ -1,6 +1,8 @@
 """The vocabulary whisper gets wrong. Every case below was observed on a real take."""
 
-from screencast.glossary import as_prompt, corrections, fix, parse
+from pathlib import Path
+
+from screencast.glossary import as_prompt, corrections, fix, load, parse
 
 TERMS = parse("""
 # a comment
@@ -138,3 +140,54 @@ def test_the_glossary_shipped_with_the_pipeline_primes_on_its_subject():
     from screencast.glossary import load
     prompt = as_prompt(load())
     assert "Goose" in prompt and "Claude Code" in prompt and "Ollama" in prompt
+
+
+# --- the glossary on what a MODEL wrote, not on what whisper heard -------------------
+
+def test_a_translation_gets_the_glossary_too():
+    """A translation rewrites every sentence from scratch, so a name whisper got wrong can
+    come back through the model. "guz-docs.ai" shipped in the English description of a
+    video whose French description had it right — it is the install URL of the video."""
+    from screencast import glossary
+    from screencast.publish import fix_names
+    # via load(): fix() reads the normalised index it builds, not a bare dict
+    path = Path(__file__).parent / "_glossaire_test.txt"
+    path.write_text("goose-docs.ai = guz-docs.ai\nClaude Cowork = Cloud Cowork\n")
+    terms = glossary.load(path)
+    path.unlink()
+    data = fix_names({
+        "title": "Goose, the free alternative to Cloud Cowork",
+        "description": "We install Goose via guz-docs.ai.",
+        "chapters": ["Install via guz-docs.ai", "Use it"],
+        "tags": ["goose"],
+    }, terms)
+    assert data["title"] == "Goose, the free alternative to Claude Cowork"
+    assert data["description"] == "We install Goose via goose-docs.ai."
+    assert data["chapters"] == ["Install via goose-docs.ai", "Use it"]
+
+
+def test_fix_names_leaves_non_strings_alone():
+    from screencast import glossary
+    from screencast.publish import fix_names
+    data = fix_names({"n": 3, "flag": True, "rows": [1, 2]}, glossary.load())
+    assert data == {"n": 3, "flag": True, "rows": [1, 2]}
+
+
+def test_an_entry_carries_its_own_reach(tmp_path):
+    """A domain name holds no space, so as a WORD count it is 1 — while recognising it
+    takes three tokens. It used to work only because "MKV = M K V, em ka vé" pushed the
+    matcher's reach to 3 for the whole file: deleting that unrelated line would have
+    silently stopped correcting every domain."""
+    path = tmp_path / "g.txt"
+    path.write_text("goose-docs.ai = guz-docs.ai\n")
+    terms = load(path)
+    assert fix("install via guz-docs.ai.", terms)[0] == "install via goose-docs.ai."
+    assert fix("va sur guz-docs.ai, puis", terms)[0] == "va sur goose-docs.ai, puis"
+
+
+def test_multi_word_entries_still_reach_across_spaces(tmp_path):
+    path = tmp_path / "g.txt"
+    path.write_text("Claude Code = Cloud Cowork, Cloudcode\n")
+    terms = load(path)
+    assert fix("dans Cloud Cowork on peut", terms)[0] == "dans Claude Code on peut"
+    assert fix("dans Cloudcode on peut", terms)[0] == "dans Claude Code on peut"
