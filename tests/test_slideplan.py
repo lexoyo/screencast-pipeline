@@ -449,3 +449,16 @@ def test_with_neither_field_the_card_opens_the_video():
     layout = build(plan, plan.kept, channel=CHANNEL, intro_seconds=4.0)
     card = next(c for c in layout.cards if c.kind == "intro")
     assert (card.after_index, card.start) == (None, 0.0)
+
+
+def test_the_card_can_never_cut_into_the_summary_it_should_follow():
+    """The floor is the announcing segment: a card that interrupts the summary is the one
+    placement that is always wrong, so the prompt is not trusted alone with it."""
+    wrong = [dict(s) for s in SUMMARY_SPLIT]
+    del wrong[2]["intro_after"]
+    wrong[0]["intro_after"] = True        # the model aims before the summary
+    plan = _plan(wrong, META)
+    layout = build(plan, plan.kept, channel=CHANNEL, intro_seconds=4.0)
+    card = next(c for c in layout.cards if c.kind == "intro")
+    assert card.after_index == 1          # pushed back to the announcing segment
+    assert card.start == 40.0

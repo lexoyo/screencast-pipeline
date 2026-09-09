@@ -132,13 +132,16 @@ shown, and the choice of which is not yours.
 
 - **`intro_after: true`** on the last segment before the intro card should cut in. Put it
   on exactly ONE kept segment. Unlike the programme panel, this card is full-screen with
-  music: it INTERRUPTS. So it has to land where the speaker has finished a thought — a full
-  stop, the end of an idea. Never inside a sentence, and never between an enumeration and
-  what it counts to ("...d'une comment on l'installe, et de deux" | "comment on l'utilise"
-  is the wrong seam; the right one is after the whole list). A segment boundary is only a
-  silence — the speaker breathes mid-sentence — so read the WORDS, not the boundaries.
-  Usual place: after the spoken summary is complete, before the first real section starts.
-  Omit it and the card opens the video, which is the safe default.
+  music: it INTERRUPTS.
+  - **If a programme is announced at all, the card goes AFTER the whole summary.** Not
+    after the segment you tagged `plan` — the summary usually runs past it, because the
+    speaker breathes mid-list and a segment boundary is only a silence. Find where the
+    enumeration is FINISHED in the words, and put `intro_after` on that segment.
+    "...d'une comment on l'installe, et de deux" | "comment on l'utilise" is the wrong
+    seam: it splits the list from what it counts to. The right one is after the last item.
+  - With no programme announced: any full stop where a thought ends, before the first real
+    section starts.
+  - Omit it and the card opens the video, which is the safe default.
 
 - **`list_item: {"n": 2}`** on the segment where **chapter 2 actually BEGINS**, when that
   deserves a full-screen card rather than a discreet band. Reserve it for the two or three

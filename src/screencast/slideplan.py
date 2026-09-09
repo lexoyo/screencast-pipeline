@@ -169,6 +169,13 @@ def build(
     # field existed still lands where it used to rather than jumping to the front.
     if seam_index is None:
         seam_index = next((i for i, seg in enumerate(kept) if seg.plan and meta.chapters), None)
+    # A card that interrupts the summary it is supposed to follow is the one placement that
+    # is always wrong, so it is not left to the prompt alone. The floor is the announcing
+    # segment; the model still has to carry the seam past the END of the summary, which the
+    # code cannot see — only one segment is ever tagged, and the list usually runs past it.
+    announced = next((i for i, seg in enumerate(kept) if seg.plan and meta.chapters), None)
+    if announced is not None:
+        seam_index = announced if seam_index is None else max(seam_index, announced)
     insert_at = kept[seam_index].final_end if seam_index is not None else 0.0
 
     def shift(t: float, *, ends: bool = False) -> float:
