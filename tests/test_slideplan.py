@@ -401,3 +401,51 @@ def test_a_chapter_after_the_intro_card_is_pushed_back_by_it():
     assert layout.intro_at == 40.0, "the card lands at the end of the spoken summary"
     assert layout.chapter_time(50.0) == 56.0   # after the card: pushed back by its length
     assert layout.chapter_time(10.0) == 10.0   # before it: untouched
+
+
+# --- where the intro card cuts in ------------------------------------------------
+# It used to be inferred from `plan`, and landed wherever the announcing segment happened
+# to end. On one shoot that was mid-sentence: the card, full-screen and scored, dropped
+# between "et de deux" and what it was counting to. The model picks the seam now.
+
+SUMMARY_SPLIT = [
+    # the summary runs across two segments — the silence after "et de deux" is a breath
+    {"start": 0.0, "end": 36.0, "drop": False, "scene": "large"},
+    {"start": 36.0, "end": 40.0, "drop": False, "scene": "large", "plan": True},
+    {"start": 40.0, "end": 66.0, "drop": False, "scene": "large", "intro_after": True},
+    {"start": 66.0, "end": 120.0, "drop": False, "scene": "ecran"},
+]
+META = {"intro": {"title": "Un titre"}, "chapters": [{"at": 80, "label": "Premier"}]}
+
+
+def test_the_intro_card_lands_where_the_model_put_intro_after():
+    plan = _plan(SUMMARY_SPLIT, META)
+    layout = build(plan, plan.kept, channel=CHANNEL, intro_seconds=4.0)
+    card = next(c for c in layout.cards if c.kind == "intro")
+    assert card.after_index == 2          # the segment carrying intro_after, not `plan`
+    assert card.start == 66.0             # the end of the whole summary
+
+
+def test_the_programme_panel_still_follows_plan_not_the_card():
+    """The two are separate: the panel accompanies the words, the card interrupts them."""
+    plan = _plan(SUMMARY_SPLIT, META)
+    layout = build(plan, plan.kept, channel=CHANNEL, intro_seconds=4.0)
+    panel = next(o for o in layout.overlays if o.kind == "plan")
+    assert (panel.start, panel.end) == (36.0, 40.0)
+
+
+def test_an_edl_written_before_the_field_keeps_the_old_placement():
+    """Backwards compatibility: no intro_after means fall back to `plan`, not to the front."""
+    old = [dict(s) for s in SUMMARY_SPLIT]
+    del old[2]["intro_after"]
+    plan = _plan(old, META)
+    layout = build(plan, plan.kept, channel=CHANNEL, intro_seconds=4.0)
+    card = next(c for c in layout.cards if c.kind == "intro")
+    assert (card.after_index, card.start) == (1, 40.0)
+
+
+def test_with_neither_field_the_card_opens_the_video():
+    plan = _plan(BODY, {"intro": {"title": "Un titre"}})
+    layout = build(plan, plan.kept, channel=CHANNEL, intro_seconds=4.0)
+    card = next(c for c in layout.cards if c.kind == "intro")
+    assert (card.after_index, card.start) == (None, 0.0)

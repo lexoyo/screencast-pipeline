@@ -118,6 +118,14 @@ class Span:
     The programme overlay lasts exactly as long as that sentence — it accompanies what is
     being said instead of imposing itself, which is why nothing is shown at all when the
     speaker never announces one."""
+    intro_after: bool = False
+    """True on the last segment before the intro card cuts in.
+
+    The card is full-screen with music: it interrupts. Where it lands used to be inferred
+    from `plan` — the card fell right after the segment announcing the programme, on the
+    theory that there was nothing new to ask the model. But a segment boundary is a
+    silence, not a full stop, and one shoot had the card drop between "et de deux" and what
+    it was counting to. The model reads the words, so the model picks the seam."""
 
     @property
     def duration(self) -> float:
@@ -134,6 +142,7 @@ class KeptSegment:
     final_start: float
     list_item: ListItem | None = None
     plan: bool = False
+    intro_after: bool = False
 
     @property
     def duration(self) -> float:
@@ -153,6 +162,7 @@ class KeptSegment:
                 {"n": self.list_item.n, "label": self.list_item.label} if self.list_item else None
             ),
             "plan": self.plan,
+            "intro_after": self.intro_after,
             "final_start": self.final_start,
             "final_end": self.final_end,
         }
@@ -180,6 +190,7 @@ class Edl:
                     final_start=cursor,
                     list_item=span.list_item,
                     plan=span.plan,
+                    intro_after=span.intro_after,
                 )
             )
             cursor += span.duration
@@ -282,6 +293,7 @@ def parse(data: dict[str, Any]) -> Edl:
             reason=str(item.get("reason", "")),
             list_item=ListItem.parse(item.get("list_item")),
             plan=bool(item.get("plan", False)),
+            intro_after=bool(item.get("intro_after", False)),
         )
         for item in data.get("timeline") or []
         if "start" in item and "end" in item
@@ -316,6 +328,7 @@ def load_kept(path: Path) -> list[KeptSegment]:
             scene=row.get("scene", "large"),
             final_start=row["final_start"],
             list_item=ListItem.parse(row.get("list_item")),
+            intro_after=bool(row.get("intro_after", False)),
             plan=bool(row.get("plan", False)),
         )
         for row in json.loads(path.read_text())

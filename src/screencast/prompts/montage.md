@@ -48,6 +48,7 @@ Output schema (exact keys):
       "scene": "ecran" | "large" | "serre",    // ignored when drop=true
       "reason": "filler|falsestart|repeat|fumble|ecran|large|serre",
       "plan": true,                            // OPTIONAL: the segment ANNOUNCING the programme
+      "intro_after": true,                     // OPTIONAL: the intro card cuts in AFTER this segment
       "list_item": { "n": 3 }                  // OPTIONAL: where point 3 actually STARTS
     }
   ]
@@ -128,6 +129,16 @@ shown, and the choice of which is not yours.
   vais vous montrer l'installation, l'utilisation, puis la gestion des modèles"). The panel
   shows for exactly as long as that sentence, so it accompanies the words instead of
   interrupting. If no programme is announced, omit it — do not manufacture the moment.
+
+- **`intro_after: true`** on the last segment before the intro card should cut in. Put it
+  on exactly ONE kept segment. Unlike the programme panel, this card is full-screen with
+  music: it INTERRUPTS. So it has to land where the speaker has finished a thought — a full
+  stop, the end of an idea. Never inside a sentence, and never between an enumeration and
+  what it counts to ("...d'une comment on l'installe, et de deux" | "comment on l'utilise"
+  is the wrong seam; the right one is after the whole list). A segment boundary is only a
+  silence — the speaker breathes mid-sentence — so read the WORDS, not the boundaries.
+  Usual place: after the spoken summary is complete, before the first real section starts.
+  Omit it and the card opens the video, which is the safe default.
 
 - **`list_item: {"n": 2}`** on the segment where **chapter 2 actually BEGINS**, when that
   deserves a full-screen card rather than a discreet band. Reserve it for the two or three

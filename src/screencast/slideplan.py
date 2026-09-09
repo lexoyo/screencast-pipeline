@@ -158,10 +158,18 @@ def build(
     # becomes a breath between the promise and the content, and it is the only music left
     # in the video that plays alone.
     #
-    # The summary segment is already known: it is the one the brain tagged `plan`, the
-    # same one that drives the programme panel. Nothing new to ask the model.
-    summary_index = next((i for i, seg in enumerate(kept) if seg.plan and meta.chapters), None)
-    insert_at = kept[summary_index].final_end if summary_index is not None else 0.0
+    # Where it cuts in is the model's call, on `intro_after`. It used to be inferred from
+    # `plan` — same segment as the programme panel, "nothing new to ask the model" — and
+    # that held only as long as the announcing segment happened to END on a full stop. One
+    # shoot ended it on "et de deux", and the card, full-screen and scored, landed between
+    # the enumeration and what it was counting to. A segment boundary is a silence; a seam
+    # has to be read in the words, which is the model's job and not arithmetic's.
+    seam_index = next((i for i, seg in enumerate(kept) if seg.intro_after), None)
+    # Falls back to the old rule when the model says nothing, so an EDL written before this
+    # field existed still lands where it used to rather than jumping to the front.
+    if seam_index is None:
+        seam_index = next((i for i, seg in enumerate(kept) if seg.plan and meta.chapters), None)
+    insert_at = kept[seam_index].final_end if seam_index is not None else 0.0
 
     def shift(t: float, *, ends: bool = False) -> float:
         """A body timestamp projected onto the final timeline.
@@ -190,7 +198,7 @@ def build(
                 },
                 start=insert_at,
                 duration=intro_seconds,
-                after_index=summary_index,
+                after_index=seam_index,
             )
         )
 
