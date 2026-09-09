@@ -501,3 +501,39 @@ def test_a_stray_plan_tag_much_later_is_not_a_second_programme():
     panels = [o for o in layout.overlays if o.kind == "plan"]
     assert len(panels) == 1
     assert (panels[0].start, panels[0].end) == (36.0, 66.0)
+
+
+def test_the_panel_does_not_bill_the_section_already_playing():
+    """YouTube requires a chapter at 0:00, so the first one is the opening itself. The
+    panel was listing "Présentation · Installation · Utilisation" over a voice saying
+    "d'une l'installation, et de deux l'utilisation"."""
+    plan = _plan(SUMMARY_SPANNED, {
+        "intro": {"title": "Un titre"},
+        "chapters": [{"at": 0, "label": "Présentation"},
+                     {"at": 66, "label": "Installation"},
+                     {"at": 110, "label": "Utilisation"}],
+    })
+    layout = build(plan, plan.kept, channel=CHANNEL, intro_seconds=4.0)
+    panel = next(o for o in layout.overlays if o.kind == "plan")
+    assert panel.values["chapters"] == ["Installation", "Utilisation"]
+
+
+def test_a_chapter_starting_during_the_announcement_stays_on_the_panel():
+    """Only what started BEFORE the announcement is dropped — a section that begins while
+    the speaker is still listing is still something to come."""
+    plan = _plan(SUMMARY_SPANNED, {
+        "chapters": [{"at": 50, "label": "Pendant"}, {"at": 90, "label": "Après"}],
+    })
+    layout = build(plan, plan.kept, channel=CHANNEL)
+    panel = next(o for o in layout.overlays if o.kind == "plan")
+    assert panel.values["chapters"] == ["Pendant", "Après"]
+
+
+def test_a_panel_that_would_be_empty_keeps_every_chapter():
+    """A panel saying nothing is worse than one saying too much."""
+    plan = _plan(SUMMARY_SPANNED, {
+        "chapters": [{"at": 0, "label": "Tout au début"}],
+    })
+    layout = build(plan, plan.kept, channel=CHANNEL)
+    panel = next(o for o in layout.overlays if o.kind == "plan")
+    assert panel.values["chapters"] == ["Tout au début"]

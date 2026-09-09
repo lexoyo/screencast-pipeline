@@ -242,16 +242,26 @@ def build(
     # --- programme: exactly as long as the announcement, however many segments it spans
     programme_end: float | None = None
     if plan_run:
+        # What is ANNOUNCED, not the whole chapter list. YouTube requires a chapter at
+        # 0:00, so the first one is the opening itself — and the panel was billing the
+        # viewer for the section they were already watching: "Présentation · Installation ·
+        # Utilisation" over a voice saying "d'une l'installation, et de deux l'utilisation".
+        # The two lists cannot be the same one. What is dropped is what STARTED BEFORE the
+        # speaker began announcing: a section already under way is not something still to
+        # come. Chapters are timed in ORIGINAL seconds, so the comparison is against the
+        # announcement's start in the rush, not on the edited timeline.
+        announced = [c.label for c in meta.chapters if c.at >= kept[plan_run[0]].start]
         overlays.append(
             Overlay(
                 kind="plan",
                 values={
                     "kicker": channel.get("programme_label", "Au programme"),
-                    # The panel lists the CHAPTERS, and a band later repeats one of those
-                    # exact labels. One list, seen twice: promising "Installer Jan" and
-                    # captioning the same passage "Installation" reads as two different
-                    # things to anyone who noticed the first.
-                    "chapters": [c.label for c in meta.chapters],
+                    # A band later repeats one of these exact labels. One list, seen twice:
+                    # promising "Installer Jan" and captioning the same passage
+                    # "Installation" reads as two different things to anyone who noticed
+                    # the first. Falling back to every chapter keeps a panel that says
+                    # something over a panel that says nothing.
+                    "chapters": announced or [c.label for c in meta.chapters],
                 },
                 start=shift(kept[plan_run[0]].final_start),
                 end=(programme_end := shift(kept[plan_run[-1]].final_end, ends=True)),
