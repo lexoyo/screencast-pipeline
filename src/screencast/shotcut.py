@@ -11,7 +11,7 @@ from math import gcd
 from pathlib import Path
 
 from .episode import Episode
-from .shell import ffprobe_duration, log, loudness_lufs
+from .shell import ffprobe_dimensions, ffprobe_duration, log, loudness_lufs
 from .slideplan import SlidePlan
 from .sync import camera_offset
 from .timecode import mlt_timecode as tc
@@ -129,6 +129,26 @@ def _volume_filter(db: float) -> str:
     )
 
 
+def cover_rect(source: tuple[int, int] | None, out_w: int, out_h: int,
+               zoom: float = 1.0) -> str:
+    """The qtblend rect that frames a source the way ffmpeg's `fill` filter does.
+
+    qtblend has no aspect-preserving mode — it stretches whatever it is given into the
+    rect. render.py instead scales the source up until it covers the frame and crops the
+    overflow. Writing the frame itself as the rect therefore made the two disagree the day
+    the camera stopped sharing the frame's aspect: Shotcut showed the speaker 11% wider
+    than final.mp4 did. Enlarging the rect past the frame edges reproduces the crop, since
+    what falls outside is not drawn.
+    """
+    if not source or source[0] <= 0 or source[1] <= 0:
+        scale = zoom  # nothing measurable: the old behaviour, the frame itself
+        width, height = out_w * scale, out_h * scale
+    else:
+        cover = max(out_w / source[0], out_h / source[1]) * zoom
+        width, height = source[0] * cover, source[1] * cover
+    return f"{(out_w - width) / 2:.0f} {(out_h - height) / 2:.0f} {width:.0f} {height:.0f} 1"
+
+
 def build(ep: Episode, plan: Edl, layout: SlidePlan | None = None) -> str:
     cfg = ep.cfg
     kept = plan.kept
@@ -141,13 +161,9 @@ def build(ep: Episode, plan: Edl, layout: SlidePlan | None = None) -> str:
 
     dar_w, dar_h = display_aspect(cfg.out_w, cfg.out_h)
 
-    full_frame = f"0 0 {cfg.out_w} {cfg.out_h} 1"
-    zoom_x = -(cfg.zoom_scale - 1) / 2 * cfg.out_w
-    zoom_y = -(cfg.zoom_scale - 1) / 2 * cfg.out_h
-    zoom_rect = (
-        f"{zoom_x:.0f} {zoom_y:.0f} "
-        f"{cfg.zoom_scale * cfg.out_w:.0f} {cfg.zoom_scale * cfg.out_h:.0f} 1"
-    )
+    cam = ffprobe_dimensions(face) if face else None
+    full_frame = cover_rect(cam, cfg.out_w, cfg.out_h)
+    zoom_rect = cover_rect(cam, cfg.out_w, cfg.out_h, zoom=cfg.zoom_scale)
 
     # Each track holds an entry where it is the active shot, and a blank everywhere else,
     # so the three tracks stay aligned on the same timeline.

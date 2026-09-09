@@ -13,6 +13,9 @@ import shlex
 from dataclasses import dataclass, fields
 from pathlib import Path
 
+H264_MAX = 16384
+"""libx264's largest dimension. Past it the encoder refuses the very first frame."""
+
 
 class ConfigError(Exception):
     """A setting is missing, malformed, or points at something that isn't there."""
@@ -222,6 +225,9 @@ def load(config_path: Path, overrides: dict[str, str] | None = None) -> Config:
         if value % 2:
             raise ConfigError(f"config.env: {name}={value} must be even — libx264 cannot "
                               "encode an odd frame")
+        if value > H264_MAX:
+            raise ConfigError(f"config.env: {name}={value} is past libx264's {H264_MAX} "
+                              "limit — it would fail at the first encoded frame")
     return cfg
 
 

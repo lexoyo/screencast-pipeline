@@ -298,8 +298,11 @@ def _run_pipeline(root: Path, cfg, stages) -> int:
     lock.write_text(str(os.getpid()))
 
     set_log_file(paths.log_file)
-    ep = open_episode(root, cfg)
     try:
+        # Inside the try: measuring the frame runs ffprobe, and an exception here used to
+        # escape past the finally that releases the lock, leaving a running.pid behind and
+        # nothing in the log.
+        ep = open_episode(root, cfg)
         for name in stages:
             run_stage(name, ep)
     except (MissingInput, TimelineError, ToolError, ConfigError) as exc:
@@ -312,9 +315,11 @@ def _run_pipeline(root: Path, cfg, stages) -> int:
 
 def cmd_plan(args, cfg) -> int:
     """Show where the slides land, without rendering anything."""
-    ep = open_episode(Path(args.episode).resolve(), cfg)
-    ep.ensure_dirs()
-    set_log_file(ep.log_file)
+    root = Path(args.episode).resolve()
+    paths = Episode(root=root, cfg=cfg)
+    paths.ensure_dirs()
+    set_log_file(paths.log_file)
+    ep = open_episode(root, cfg)
     try:
         plan = _plan(ep)
     except (TimelineError, MissingInput) as exc:

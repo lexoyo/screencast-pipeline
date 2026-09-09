@@ -129,14 +129,20 @@ def ffprobe_dimensions(path: Path) -> tuple[int, int] | None:
     cropped a tenth of the height away in silence — the title bar off the top, the dock
     off the bottom. The frame is measured now rather than assumed.
     """
-    proc = run(
-        [
-            "ffprobe", "-v", "error", "-select_streams", "v:0",
-            "-show_entries", "stream=width,height", "-of", "csv=p=0", path,
-        ],
-        capture=True,
-        allow_fail=True,
-    )
+    try:
+        proc = run(
+            [
+                "ffprobe", "-v", "error", "-select_streams", "v:0",
+                "-show_entries", "stream=width,height", "-of", "csv=p=0", path,
+            ],
+            capture=True,
+            allow_fail=True,
+        )
+    except ToolError:
+        # allow_fail covers a bad exit code, not a missing binary — and `doctor` calls
+        # this precisely to report on a machine where the toolchain may be missing. It
+        # must not die diagnosing the thing it was asked to diagnose.
+        return None
     try:
         width, height = (int(part) for part in proc.stdout.strip().split(",")[:2])
     except ValueError:

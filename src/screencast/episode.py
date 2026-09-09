@@ -211,16 +211,31 @@ def open_episode(root: Path, cfg: Config) -> Episode:
 
     dims = ffprobe_dimensions(ep.screen) if ep.screen.is_file() else None
     if dims is None:
-        width, height = cfg.out_w or 1920, cfg.out_h or 1080
-        log(f"frame: {width}x{height} (the screen rush could not be measured)")
-        return replace(ep, cfg=replace(cfg, out_w=width, out_h=height))
-
-    rush_w, rush_h = dims
+        # Falling back per-axis would mix two shapes: OUT_W="1000" with an unreadable rush
+        # used to take 1080 from the other default and render an almost square frame. 16:9
+        # is the assumption this code exists to remove, but it is at least a whole one, and
+        # it is what every episode before this change was rendered at.
+        rush_w, rush_h = 1920, 1080
+        log("frame: the screen rush could not be measured, assuming 16:9")
+    else:
+        rush_w, rush_h = dims
     if cfg.out_w:
         width, height = cfg.out_w, _even(cfg.out_w * rush_h / rush_w)
     elif cfg.out_h:
         width, height = _even(cfg.out_h * rush_w / rush_h), cfg.out_h
     else:
         width, height = _even(rush_w), _even(rush_h)
+
+    # The camera is framed to the same rect, so a rush that disagrees with the screen is
+    # cropped left and right. That is a deliberate trade — the screen is what a screencast
+    # is about — but it is said out loud, because a silent crop is the whole reason this
+    # function exists.
+    cam = ffprobe_dimensions(ep.face) if ep.has_face and ep.face.is_file() else None
     log(f"frame: {width}x{height} (screen rush {rush_w}x{rush_h})")
+    if cam and cam[0] * height != cam[1] * width:
+        kept = min(width / cam[0], height / cam[1])
+        lost_w, lost_h = 1 - kept * cam[0] / width, 1 - kept * cam[1] / height
+        edge = f"{max(lost_w, lost_h) / 2:.0%} off each side"
+        axis = "left and right" if lost_w > lost_h else "top and bottom"
+        log(f"  camera rush is {cam[0]}x{cam[1]}: it is cropped {axis}, {edge}")
     return replace(ep, cfg=replace(cfg, out_w=width, out_h=height))

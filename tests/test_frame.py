@@ -11,7 +11,7 @@ import pytest
 from screencast import episode as episode_mod
 from screencast.config import ConfigError, load
 from screencast.episode import open_episode
-from screencast.shotcut import display_aspect
+from screencast.shotcut import cover_rect, display_aspect
 from screencast.slides import DESIGN_W, frame_css
 
 MINIMAL = """
@@ -118,3 +118,39 @@ def test_cards_are_drawn_at_the_frame_but_laid_out_at_the_design_width(
 )
 def test_the_shotcut_profile_declares_the_frame_it_actually_has(width, height, aspect):
     assert display_aspect(width, height) == aspect
+
+
+def test_the_shotcut_rect_reproduces_the_crop_ffmpeg_does():
+    """qtblend stretches into its rect, so the rect has to overflow the frame.
+
+    Written as the frame itself, a 16:9 camera on a 16:10 project showed the speaker 11%
+    wider in Shotcut than in final.mp4.
+    """
+    assert cover_rect((1920, 1080), 2560, 1600) == "-142 0 2844 1600 1"
+
+
+def test_a_source_that_shares_the_frame_aspect_fills_it_exactly():
+    assert cover_rect((2560, 1600), 2560, 1600) == "0 0 2560 1600 1"
+    assert cover_rect((1920, 1080), 1920, 1080) == "0 0 1920 1080 1"
+
+
+def test_the_zoom_rect_covers_and_magnifies():
+    assert cover_rect((1920, 1080), 2560, 1600, zoom=1.4) == "-711 -320 3982 2240 1"
+
+
+def test_no_measurable_camera_falls_back_to_the_frame():
+    assert cover_rect(None, 2560, 1600) == "0 0 2560 1600 1"
+    assert cover_rect((0, 0), 1920, 1080, zoom=1.4) == "-384 -216 2688 1512 1"
+
+
+def test_an_unmeasurable_rush_keeps_one_whole_shape(tmp_path, monkeypatch):
+    """Per-axis fallbacks mixed two shapes: OUT_W=1000 used to give a near-square 1000x1080."""
+    root, cfg = _root(tmp_path, 'OUT_W="1000"\n')
+    _measuring(monkeypatch, None)
+    ep = open_episode(root, cfg)
+    assert (ep.cfg.out_w, ep.cfg.out_h) == (1000, 562)
+
+
+def test_a_frame_past_the_encoder_limit_is_refused(tmp_path):
+    with pytest.raises(ConfigError, match="16384"):
+        _root(tmp_path, 'OUT_W="100000"\n')
