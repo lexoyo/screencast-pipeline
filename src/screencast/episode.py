@@ -233,9 +233,14 @@ def open_episode(root: Path, cfg: Config) -> Episode:
     cam = ffprobe_dimensions(ep.face) if ep.has_face and ep.face.is_file() else None
     log(f"frame: {width}x{height} (screen rush {rush_w}x{rush_h})")
     if cam and cam[0] * height != cam[1] * width:
-        kept = min(width / cam[0], height / cam[1])
-        lost_w, lost_h = 1 - kept * cam[0] / width, 1 - kept * cam[1] / height
-        edge = f"{max(lost_w, lost_h) / 2:.0%} off each side"
+        # `max`, not `min`: force_original_aspect_ratio=increase scales until the source
+        # COVERS the frame and crops the overflow. Taking the smaller factor describes a
+        # letterbox instead, and names the wrong axis — a 16:9 camera in a 16:10 frame
+        # loses its sides, not its top.
+        cover = max(width / cam[0], height / cam[1])
+        lost_w = 1 - width / (cam[0] * cover)
+        lost_h = 1 - height / (cam[1] * cover)
         axis = "left and right" if lost_w > lost_h else "top and bottom"
-        log(f"  camera rush is {cam[0]}x{cam[1]}: it is cropped {axis}, {edge}")
+        log(f"  camera rush is {cam[0]}x{cam[1]}: it is cropped {axis}, "
+            f"{max(lost_w, lost_h) / 2:.0%} off each side")
     return replace(ep, cfg=replace(cfg, out_w=width, out_h=height))

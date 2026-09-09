@@ -154,3 +154,18 @@ def test_an_unmeasurable_rush_keeps_one_whole_shape(tmp_path, monkeypatch):
 def test_a_frame_past_the_encoder_limit_is_refused(tmp_path):
     with pytest.raises(ConfigError, match="16384"):
         _root(tmp_path, 'OUT_W="100000"\n')
+
+
+def test_the_crop_warning_names_the_axis_the_camera_actually_loses(tmp_path, monkeypatch, capsys):
+    """A 16:9 camera in a 16:10 frame loses its SIDES. Saying "top and bottom" would be
+    the same class of defect as the assumption this whole change removed: a message that
+    contradicts the filter it describes."""
+    root, cfg = _root(tmp_path)
+    (root / "face.mkv").write_bytes(b"")
+    monkeypatch.setattr(
+        episode_mod, "ffprobe_dimensions",
+        lambda path: (1920, 1080) if path.name.startswith("face") else (2560, 1600),
+    )
+    open_episode(root, cfg)
+    out = capsys.readouterr().out
+    assert "cropped left and right, 5% off each side" in out
