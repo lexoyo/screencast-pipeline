@@ -105,3 +105,63 @@ def test_kept_spans_are_never_touched():
     plan, notes = sanitize(original, silences=[])
     assert plan.timeline == original.timeline
     assert notes == []
+
+
+# --- spans too short to hold a frame -------------------------------------------------
+# A 0.02 s kept span at 30 fps renders as a file with an audio track and NO video stream.
+# `concat -c copy` inherits the hole: the picture freezes while the sound goes on. It
+# shipped that way once, frozen from 2:02.
+
+def _spans(*rows):
+    return parse({"language": "fr", "metadata": {}, "timeline": [
+        {"start": a, "end": b, "drop": d, "scene": sc, "reason": ""}
+        for a, b, d, sc in rows
+    ]})
+
+
+def test_a_span_shorter_than_a_frame_is_merged_into_the_previous_shot():
+    plan = _spans((0.0, 116.98, False, "ecran"),
+                  (116.98, 117.00, False, "ecran"),   # 0.02 s — under one frame
+                  (117.00, 174.68, False, "ecran"))
+    clean, notes = sanitize(plan, [], fps=30)
+    assert [(s.start, s.end) for s in clean.timeline] == [(0.0, 117.00), (117.00, 174.68)]
+    assert any("under one frame" in n for n in notes)
+
+
+def test_every_kept_span_can_hold_at_least_one_frame():
+    plan = _spans((0.0, 10.0, False, "ecran"),
+                  (10.0, 10.01, False, "large"),
+                  (10.01, 20.0, False, "ecran"))
+    clean, _ = sanitize(plan, [], fps=30)
+    assert all(s.drop or s.duration >= 1 / 30 for s in clean.timeline)
+
+
+def test_the_audio_of_a_merged_span_is_never_lost():
+    """Merged, not dropped: under a frame nobody can see which shot it came from, but the
+    two hundredths of a second of speech still have to be there."""
+    plan = _spans((0.0, 10.0, False, "ecran"),
+                  (10.0, 10.02, False, "large"),
+                  (10.02, 20.0, False, "ecran"))
+    clean, _ = sanitize(plan, [], fps=30)
+    assert clean.timeline[-1].end == 20.0
+    assert sum(s.duration for s in clean.timeline if not s.drop) == 20.0
+
+
+def test_a_too_short_span_at_the_very_start_joins_what_follows():
+    plan = _spans((0.0, 0.02, False, "large"), (0.02, 20.0, False, "ecran"))
+    clean, notes = sanitize(plan, [], fps=30)
+    assert [(s.start, s.end) for s in clean.timeline] == [(0.0, 20.0)]
+    assert any("very start" in n for n in notes)
+
+
+def test_the_floor_follows_the_framerate():
+    """A frame lasts longer at a lower framerate, so the floor RISES as fps drops: 0.05 s
+    holds a frame at 30 fps and holds none at 15."""
+    plan = _spans((0.0, 10.0, False, "ecran"),
+                  (10.0, 10.05, False, "ecran"),
+                  (10.05, 20.0, False, "ecran"))
+    at30, _ = sanitize(plan, [], fps=30)
+    at15, notes = sanitize(plan, [], fps=15)
+    assert len(at30.timeline) == 3      # 0.05 s > 1/30, left alone
+    assert len(at15.timeline) == 2      # 0.05 s < 1/15, absorbed
+    assert any("under one frame" in n for n in notes)

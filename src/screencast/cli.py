@@ -100,7 +100,7 @@ def _plan(ep: Episode):
 
     plan = timeline.load(ep.edl)
     silences = json.loads(ep.silences.read_text()) if ep.silences.is_file() else []
-    plan, notes = cuts.sanitize(plan, silences)
+    plan, notes = cuts.sanitize(plan, silences, fps=ep.cfg.out_fps)
     for note in notes:
         log(f"  cut check: {note}")
     stats = cuts.report(plan, silences)

@@ -83,6 +83,7 @@ def sanitize(
     *,
     pad: float = 0.07,
     snap_reach: float = 0.25,
+    fps: int = 30,
 ) -> tuple[Edl, list[str]]:
     """Return the plan with every cut made safe, and the list of what was changed.
 
@@ -123,7 +124,49 @@ def sanitize(
 
         timeline.append(replace(span, start=start, end=end))
 
-    return replace(plan, timeline=_reflow(timeline)), notes
+    timeline, short = _absorb_subframe(_reflow(timeline), fps)
+    notes += short
+    return replace(plan, timeline=timeline), notes
+
+
+def _absorb_subframe(timeline: list[Span], fps: int) -> tuple[list[Span], list[str]]:
+    """Merge away kept spans too short to hold a single frame.
+
+    A 0.02 s span at 30 fps is shorter than one frame, and ffmpeg renders it as a file with
+    an audio track and NO VIDEO STREAM at all. `concat -c copy` then inherits a hole in the
+    picture: the image freezes while the sound keeps going, and it stays frozen long after
+    the two hundredths of a second that caused it. It shipped that way once, at 2:02.
+
+    The span is absorbed into its neighbour rather than dropped, so the audio it carries is
+    never lost — under a frame, which shot it is taken from cannot be seen.
+    """
+    if not timeline:
+        return timeline, []
+    floor = 1.0 / fps
+    out: list[Span] = []
+    notes: list[str] = []
+    for span in timeline:
+        too_short = not span.drop and 0 < span.duration < floor
+        if too_short and out and not out[-1].drop:
+            notes.append(
+                f"kept {span.start:.2f}-{span.end:.2f}: {span.duration:.3f}s is under one "
+                f"frame ({floor:.3f}s) — merged into the previous shot, which would "
+                f"otherwise render with no video stream at all"
+            )
+            out[-1] = replace(out[-1], end=span.end)
+            continue
+        out.append(span)
+
+    # A too-short span at the very front has no previous shot to join, so it takes the next
+    # one's start instead — the same merge, the other way round.
+    if len(out) > 1 and not out[0].drop and 0 < out[0].duration < floor:
+        notes.append(
+            f"kept {out[0].start:.2f}-{out[0].end:.2f}: under one frame at the very start "
+            f"— merged into the shot that follows"
+        )
+        out[1] = replace(out[1], start=out[0].start)
+        out = out[1:]
+    return out, notes
 
 
 def _reflow(timeline: list[Span]) -> list[Span]:
