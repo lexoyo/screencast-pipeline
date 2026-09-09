@@ -462,3 +462,42 @@ def test_the_card_can_never_cut_into_the_summary_it_should_follow():
     card = next(c for c in layout.cards if c.kind == "intro")
     assert card.after_index == 1          # pushed back to the announcing segment
     assert card.start == 40.0
+
+
+# --- the programme panel spans the whole announcement --------------------------------
+# Tagged on one segment only, the panel flashed for 2.3 s and left while the speaker was
+# still enumerating — the silence after "et de deux" is a breath, not the end of the list.
+
+SUMMARY_SPANNED = [
+    {"start": 0.0, "end": 36.0, "drop": False, "scene": "large"},
+    {"start": 36.0, "end": 40.0, "drop": False, "scene": "large", "plan": True},
+    {"start": 40.0, "end": 66.0, "drop": False, "scene": "large", "plan": True},
+    {"start": 66.0, "end": 120.0, "drop": False, "scene": "ecran"},
+]
+
+
+def test_the_panel_covers_every_segment_the_announcement_runs_across():
+    plan = _plan(SUMMARY_SPANNED, META)
+    layout = build(plan, plan.kept, channel=CHANNEL, intro_seconds=4.0)
+    panels = [o for o in layout.overlays if o.kind == "plan"]
+    assert len(panels) == 1                       # one panel, not one per segment
+    assert (panels[0].start, panels[0].end) == (36.0, 66.0)
+
+
+def test_the_intro_floor_is_the_end_of_the_announcement_not_its_start():
+    """Alex's rule: if there is a summary, the intro comes after it — all of it."""
+    plan = _plan(SUMMARY_SPANNED, META)
+    layout = build(plan, plan.kept, channel=CHANNEL, intro_seconds=4.0)
+    card = next(c for c in layout.cards if c.kind == "intro")
+    assert (card.after_index, card.start) == (2, 66.0)
+
+
+def test_a_stray_plan_tag_much_later_is_not_a_second_programme():
+    stray = [dict(s) for s in SUMMARY_SPANNED]
+    stray.append({"start": 120.0, "end": 140.0, "drop": False, "scene": "ecran",
+                  "plan": True})   # tagged again well after the run, with a gap
+    plan = _plan(stray, META)
+    layout = build(plan, plan.kept, channel=CHANNEL, intro_seconds=4.0)
+    panels = [o for o in layout.overlays if o.kind == "plan"]
+    assert len(panels) == 1
+    assert (panels[0].start, panels[0].end) == (36.0, 66.0)

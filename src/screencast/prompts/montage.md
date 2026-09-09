@@ -125,10 +125,13 @@ shown, and the choice of which is not yours.
   - Labels of 2-5 words, in the spoken language, phrased consistently across the list
     (all verbs, or all nouns — not "Installer Jan" next to "Utilisation du chat").
 
-- **`plan: true`** on the segment where the speaker announces the programme out loud ("je
-  vais vous montrer l'installation, l'utilisation, puis la gestion des modèles"). The panel
-  shows for exactly as long as that sentence, so it accompanies the words instead of
-  interrupting. If no programme is announced, omit it — do not manufacture the moment.
+- **`plan: true`** on **every** segment the spoken announcement runs across ("je vais vous
+  montrer l'installation, l'utilisation, puis la gestion des modèles"). The panel shows for
+  exactly as long as the announcement, so it accompanies the words instead of interrupting
+  them — which means it has to cover the WHOLE list. The speaker breathes mid-list, so the
+  announcement is usually split over two or three segments: tag them all, consecutively.
+  Tagging only the first makes the panel flash and leave while the list is still being
+  said. If no programme is announced, omit it — do not manufacture the moment.
 
 - **`intro_after: true`** on the last segment before the intro card should cut in. Put it
   on exactly ONE kept segment. Unlike the programme panel, this card is full-screen with

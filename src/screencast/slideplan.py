@@ -158,6 +158,17 @@ def build(
     # becomes a breath between the promise and the content, and it is the only music left
     # in the video that plays alone.
     #
+    # The announcement is one stretch of speech; the silences inside it split it into
+    # several segments, and the model tags them all. Only the FIRST contiguous run counts —
+    # a stray `plan` much later is a mistake, not a second programme. A panel built from one
+    # segment used to flash for 2.3 s and leave while the speaker was still listing.
+    marked = [i for i, seg in enumerate(kept) if seg.plan] if meta.chapters else []
+    plan_run: list[int] = []
+    for i in marked:
+        if plan_run and i != plan_run[-1] + 1:
+            break
+        plan_run.append(i)
+
     # Where it cuts in is the model's call, on `intro_after`. It used to be inferred from
     # `plan` — same segment as the programme panel, "nothing new to ask the model" — and
     # that held only as long as the announcing segment happened to END on a full stop. One
@@ -167,15 +178,14 @@ def build(
     seam_index = next((i for i, seg in enumerate(kept) if seg.intro_after), None)
     # Falls back to the old rule when the model says nothing, so an EDL written before this
     # field existed still lands where it used to rather than jumping to the front.
-    if seam_index is None:
-        seam_index = next((i for i, seg in enumerate(kept) if seg.plan and meta.chapters), None)
+    if seam_index is None and plan_run:
+        seam_index = plan_run[-1]
     # A card that interrupts the summary it is supposed to follow is the one placement that
-    # is always wrong, so it is not left to the prompt alone. The floor is the announcing
-    # segment; the model still has to carry the seam past the END of the summary, which the
-    # code cannot see — only one segment is ever tagged, and the list usually runs past it.
-    announced = next((i for i, seg in enumerate(kept) if seg.plan and meta.chapters), None)
-    if announced is not None:
-        seam_index = announced if seam_index is None else max(seam_index, announced)
+    # is always wrong, so it is not left to the prompt alone. Now that the whole run is
+    # tagged, the floor is the END of the announcement rather than its first segment —
+    # which is the rule as stated: if there is a summary, the intro comes after it.
+    if plan_run:
+        seam_index = plan_run[-1] if seam_index is None else max(seam_index, plan_run[-1])
     insert_at = kept[seam_index].final_end if seam_index is not None else 0.0
 
     def shift(t: float, *, ends: bool = False) -> float:
@@ -229,13 +239,9 @@ def build(
             )
         )
 
-    # --- programme: exactly as long as the sentence announcing it
+    # --- programme: exactly as long as the announcement, however many segments it spans
     programme_end: float | None = None
-    for seg in kept:
-        if not seg.plan or not meta.chapters:
-            continue
-        start = shift(seg.final_start)
-        programme_end = shift(seg.final_end, ends=True)
+    if plan_run:
         overlays.append(
             Overlay(
                 kind="plan",
@@ -247,11 +253,10 @@ def build(
                     # things to anyone who noticed the first.
                     "chapters": [c.label for c in meta.chapters],
                 },
-                start=start,
-                end=programme_end,
+                start=shift(kept[plan_run[0]].final_start),
+                end=(programme_end := shift(kept[plan_run[-1]].final_end, ends=True)),
             )
         )
-        break  # one programme per video, whatever the model tagged
 
     # --- chapter bands, except where a card already announced the same chapter
     carded = {
