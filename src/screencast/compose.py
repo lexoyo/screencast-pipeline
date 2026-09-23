@@ -169,6 +169,20 @@ def apply_overlays(ep: Episode, source: Path, layout: SlidePlan, out: Path) -> P
     return out
 
 
+def generate_music(ep: Episode, layout: SlidePlan, plan_meta) -> dict[str, Path]:
+    """The tracks under the cards, generated once and reused by both renderers."""
+    # The sung lines come from `jingle`; the card titles are the fallback for an EDL
+    # produced before that field existed.
+    return music.build_tracks(
+        ep,
+        layout,
+        intro_lyrics=plan_meta.jingle.get("intro")
+        or (plan_meta.intro.title if plan_meta.intro else ""),
+        outro_lyrics=plan_meta.jingle.get("outro")
+        or (plan_meta.outro.title if plan_meta.outro else ""),
+    )
+
+
 def apply_music(ep: Episode, source: Path, layout: SlidePlan, plan_meta, out: Path) -> Path:
     """Mix the generated tracks under the video.
 
@@ -184,16 +198,7 @@ def apply_music(ep: Episode, source: Path, layout: SlidePlan, plan_meta, out: Pa
             out.write_bytes(source.read_bytes())
         return out
 
-    # The sung lines come from `jingle`; the card titles are the fallback for an EDL
-    # produced before that field existed.
-    tracks = music.build_tracks(
-        ep,
-        layout,
-        intro_lyrics=plan_meta.jingle.get("intro")
-        or (plan_meta.intro.title if plan_meta.intro else ""),
-        outro_lyrics=plan_meta.jingle.get("outro")
-        or (plan_meta.outro.title if plan_meta.outro else ""),
-    )
+    tracks = generate_music(ep, layout, plan_meta)
 
     bed_duration = ffprobe_duration(tracks["bed"]) if "bed" in tracks else 0.0
     beds = music.with_gains(

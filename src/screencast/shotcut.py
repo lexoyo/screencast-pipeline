@@ -1,29 +1,39 @@
-"""Emit an editable Shotcut project alongside the rendered draft.
+"""Emit an editable Shotcut project alongside the rendered draft — and render it, if asked.
 
 One track per shot type, on purpose. A Size/Position/Rotate filter sits on the track head,
 so reframing the close-up means adjusting one filter rather than thirty clips — the wide
-shot once, the close-up once, for the whole project.
+shot once, the close-up once, for the whole project. The camera correction measured by the
+`measure` stage sits there too, for the same reason.
+
+The project used to be a sketch of the export: same cuts, but none of the corrections, no
+fades, no blur behind the list cards, the voice unlevelled. Opening it in Shotcut showed a
+different video from final.mp4. It now carries everything render.py does, so that it can be
+rendered with melt-7 instead of ffmpeg (RENDERER="melt") and give the same video — which is
+the test of whether the whole edit can move to Shotcut.
+
+Everything is laid out in FRAMES, not seconds. MLT reads a playlist entry's `out` as the
+last frame played, inclusive: writing the end time there made every entry one frame too
+long, and thirty entries drifted a second against the export.
 """
 
 from __future__ import annotations
 
+import json
+from dataclasses import dataclass, replace
 from math import gcd
 from pathlib import Path
+from xml.sax.saxutils import escape
 
 from .episode import Episode
 from .shell import ffprobe_dimensions, ffprobe_duration, log, loudness_lufs
+from .shell import run as run_tool
 from .slideplan import SlidePlan
 from .sync import camera_offset
-from .timecode import mlt_timecode as tc
+from .timecode import mlt_timecode
 from .timeline import Edl
 
-
-def _entry(producer: str, start: float, end: float) -> str:
-    return f'    <entry producer="{producer}" in="{tc(start)}" out="{tc(end)}"/>'
-
-
-def _blank(duration: float) -> str:
-    return f'    <blank length="{tc(duration)}"/>'
+# The overlays fade in and out over this long, like compose.overlay_graph's default.
+OVERLAY_FADE = 0.25
 
 
 def display_aspect(width: int, height: int) -> tuple[int, int]:
@@ -35,98 +45,6 @@ def display_aspect(width: int, height: int) -> tuple[int, int]:
     """
     divisor = gcd(width, height)
     return width // divisor, height // divisor
-
-
-def _size_position(rect: str) -> str:
-    return (
-        '<filter><property name="mlt_service">qtblend</property>'
-        f'<property name="rect">{rect}</property></filter>'
-    )
-
-
-def _slide_producers(images: list[Path]) -> str:
-    """One producer per slide image.
-
-    `qimage` is MLT's still-image service and it honours the alpha channel, which is what
-    lets an overlay sit on top of the picture in Shotcut exactly as it does in the export.
-    This is the whole reason the slides are PNGs rather than an ffmpeg drawtext: a filter
-    cannot be imported into a project, an image can.
-    """
-    return "\n".join(
-        f'  <producer id="slide{index}" out="{tc(3600)}">'
-        f'<property name="length">{tc(3600)}</property>'
-        f'<property name="resource">{image}</property>'
-        f'<property name="mlt_service">qimage</property></producer>'
-        for index, image in enumerate(images)
-    )
-
-
-def _slide_track(entries: list[tuple[int, float, float]]) -> list[str]:
-    """Lay slides on their own track, separated by blanks.
-
-    Entries are (producer index, start, end) in FINAL seconds — the same numbers the
-    renderer used, so the project and the export agree.
-    """
-    rows: list[str] = []
-    cursor = 0.0
-    for index, start, end in sorted(entries, key=lambda e: e[1]):
-        if start > cursor:
-            rows.append(_blank(start - cursor))
-        rows.append(f'    <entry producer="slide{index}" in="{tc(0)}" out="{tc(end - start)}"/>')
-        cursor = end
-    return rows
-
-
-def _music_producers(beds) -> str:
-    """One producer per bed, audio only, each carrying its own level.
-
-    Not one per file. Two beds can read the same track at very different levels — the
-    music under a card sits at speech level, the bed under speech 18 dB below it — and in
-    MLT a filter attaches to a producer, never to a playlist entry. One producer per bed is
-    what lets each stretch keep the level the render gave it.
-    """
-    return "\n".join(
-        f'  <producer id="music{index}" out="{tc(3600)}">'
-        f'<property name="length">{tc(3600)}</property>'
-        f'<property name="resource">{bed.track}</property>'
-        f'<property name="mlt_service">avformat-novalidate</property>'
-        f'<property name="video_index">-1</property>'
-        f"{_volume_filter(bed.gain_db)}</producer>"
-        for index, bed in enumerate(beds)
-    )
-
-
-def _music_track(beds) -> list[str]:
-    """Music on its own playlist, so it can be levelled or muted without touching the voice.
-
-    Each entry reads its own slice of its own track: `in`/`out` are positions INSIDE the
-    music file, the blanks before them place it on the timeline. `beds` must already be in
-    timeline order — the entry at position i refers to the producer built from bed i.
-    """
-    rows: list[str] = []
-    cursor = 0.0
-    for index, bed in enumerate(beds):
-        if bed.start > cursor:
-            rows.append(_blank(bed.start - cursor))
-        rows.append(
-            f'    <entry producer="music{index}" '
-            f'in="{tc(bed.source_offset)}" out="{tc(bed.source_offset + bed.duration)}"/>'
-        )
-        cursor = bed.end
-    return rows
-
-
-def _volume_filter(db: float) -> str:
-    """MLT wants decibels, and a bed's gain is already expressed in them.
-
-    It used to convert from a linear level here, from a `Bed.volume` that stopped existing
-    when levels moved to measured LUFS. The project silently kept the old call until a real
-    episode with music hit it.
-    """
-    return (
-        '<filter><property name="mlt_service">volume</property>'
-        f'<property name="level">{db:.1f}</property></filter>'
-    )
 
 
 def cover_rect(source: tuple[int, int] | None, out_w: int, out_h: int,
@@ -149,69 +67,477 @@ def cover_rect(source: tuple[int, int] | None, out_w: int, out_h: int,
     return f"{(out_w - width) / 2:.0f} {(out_h - height) / 2:.0f} {width:.0f} {height:.0f} 1"
 
 
+def cover_scale(source: tuple[int, int] | None, out_w: int, out_h: int,
+                zoom: float = 1.0) -> float:
+    """How many output pixels one source pixel becomes, once framed by cover_rect."""
+    if not source or source[0] <= 0 or source[1] <= 0:
+        return zoom
+    return max(out_w / source[0], out_h / source[1]) * zoom
+
+
+# ---------------------------------------------------------------------------- filters
+
+
+def _prop(name: str, value) -> str:
+    return f'<property name="{name}">{escape(str(value))}</property>'
+
+
+def _filter(service: str, props: dict[str, object] | None = None) -> str:
+    body = "".join(_prop(k, v) for k, v in (props or {}).items())
+    return f'<filter>{_prop("mlt_service", service)}{body}</filter>'
+
+
+def _size_position(rect: str) -> str:
+    return _filter("qtblend", {"rect": rect})
+
+
+# ffmpeg lets some filters take their options by position. MLT's avfilter bridge only
+# knows them by name (`av.<option>`), so the positions are named here — only for the
+# filters the pipeline actually writes positionally.
+POSITIONAL = {
+    "unsharp": ("luma_msize_x", "luma_msize_y", "luma_amount",
+                "chroma_msize_x", "chroma_msize_y", "chroma_amount"),
+    "highpass": ("f",),
+}
+
+
+def parse_chain(chain: str) -> list[tuple[str, dict[str, str]]]:
+    """An ffmpeg filter chain -> [(filter, {option: value})].
+
+    Only the plain `a=b:c=d,e=f` shape measure.py writes: no quoting, no labels. That is
+    enough to carry params.json into the project, and anything fancier there would have
+    to be taught to this function on purpose.
+    """
+    out: list[tuple[str, dict[str, str]]] = []
+    for part in filter(None, (p.strip() for p in chain.split(","))):
+        name, _, args = part.partition("=")
+        options: dict[str, str] = {}
+        names = POSITIONAL.get(name, ())
+        for index, arg in enumerate(filter(None, args.split(":"))):
+            key, sep, value = arg.partition("=")
+            if sep:
+                options[key] = value
+            elif index < len(names):
+                options[names[index]] = key
+            else:
+                raise ValueError(f"cannot name positional option {index} of {name!r}")
+        out.append((name, options))
+    return out
+
+
+def av_filters(chain: str) -> list[str]:
+    """ffmpeg filters as MLT avfilter.* services, options unchanged.
+
+    The same libavfilter code runs in both renderers, so the correction measured once
+    applies identically — and Shotcut keeps the filters it has no panel for.
+    """
+    return [
+        _filter(f"avfilter.{name}", {f"av.{k}": v for k, v in options.items()})
+        for name, options in parse_chain(chain)
+    ]
+
+
+def audio_filters(chain: str) -> list[str]:
+    """The voice chain of params.json, with loudnorm translated.
+
+    avfilter.loudnorm is accepted by MLT and does NOTHING: measured on this rush, the
+    level came out of melt exactly as it went in, -18.9 LUFS with 0 dBFS peaks, where
+    ffmpeg gave -15.9 and -1.5. Its 192 kHz internal resampling does not survive MLT's
+    frame-sized audio blocks. So it is rebuilt from MLT's own services:
+
+    - when loudnorm could stay linear (the measured peak, once raised, still fits under
+      the ceiling), it is a constant gain — `volume` with the gain loudnorm would apply;
+    - otherwise ffmpeg itself falls back to dynamic normalisation, and so does this:
+      `dynamic_loudness`, Shotcut's "Normalize: One Pass", aiming at the same target.
+
+    The window is 10 s, not the 3 s default. Measured on the first five minutes of the
+    2026-09-23 take against the ffmpeg render (-16.0 LUFS, LRA 5.9): 3 s pumps the pauses
+    up and lands at -15.2 LUFS; 10 s gives -15.9, LRA 6.6. A plain constant gain gave
+    -16.6 and LRA 7.4 — ffmpeg's dynamic mode compresses, and a gain does not.
+
+    Either way an `alimiter` at the true-peak ceiling follows, standing in for the one
+    built into loudnorm.
+    """
+    out: list[str] = []
+    for name, options in parse_chain(chain):
+        if name != "loudnorm":
+            out.append(_filter(f"avfilter.{name}", {f"av.{k}": v for k, v in options.items()}))
+            continue
+        target = float(options.get("I", -16))
+        ceiling = float(options.get("TP", -1.5))
+        measured_i = options.get("measured_I")
+        measured_tp = options.get("measured_TP")
+        linear = options.get("linear", "true") in ("true", "1")
+        gain = target - float(measured_i) if measured_i is not None else None
+        if linear and gain is not None and measured_tp is not None \
+                and float(measured_tp) + gain <= ceiling:
+            out.append(_filter("volume", {"level": f"{gain:.2f}"}))
+        else:
+            out.append(_filter("dynamic_loudness", {"target_loudness": target, "window": 10}))
+        out.append(_filter("avfilter.alimiter", {
+            "av.limit": f"{10 ** (ceiling / 20):.4f}",
+            "av.level": 0,  # no auto-level: the limiter only catches peaks
+        }))
+    return out
+
+
+def _list_filters(blur_px: float) -> list[str]:
+    """What a list card does to the picture behind it — compose.overlay_graph's blur+dim.
+
+    Applied to the clip rather than on top of the composite, because a filter in MLT
+    belongs to a producer. The blur therefore runs on the source, before the framing
+    scales it: `blur_px` is the output-pixel sigma divided by that scale, so the blur
+    looks the same size as in the export.
+    """
+    from .compose import LIST_BLUR, LIST_DARKEN, LIST_DESATURATE
+
+    return [
+        _filter("avfilter.gblur", {"av.sigma": f"{LIST_BLUR / blur_px:.2f}"}),
+        _filter("avfilter.eq", {"av.brightness": LIST_DARKEN,
+                                "av.saturation": LIST_DESATURATE}),
+    ]
+
+
+def _fade_filter(length: int, fade: int) -> str:
+    """An alpha fade in and out, as compose.overlay_graph does with fade=...:alpha=1.
+
+    `brightness` with `level` held at 1 and `alpha` keyframed touches only the alpha
+    channel: letting the level follow would darken the card as it fades, which the
+    export does not do.
+    """
+    fade = max(1, min(fade, length // 2))
+    last = length - 1
+    return _filter("brightness", {
+        "level": 1,
+        "alpha": f"0=0;{fade}=1;{max(fade, last - fade)}=1;{last}=0",
+    })
+
+
+def _volume_filter(db: float) -> str:
+    """MLT wants decibels, and a bed's gain is already expressed in them.
+
+    It used to convert from a linear level here, from a `Bed.volume` that stopped existing
+    when levels moved to measured LUFS. The project silently kept the old call until a real
+    episode with music hit it.
+    """
+    return (
+        '<filter><property name="mlt_service">volume</property>'
+        f'<property name="level">{db:.1f}</property></filter>'
+    )
+
+
+def _music_fade(length: int, fps: int) -> str:
+    """music.mix_filter's afade in and out, as a keyframed volume level."""
+    from .music import FADE_IN, FADE_OUT
+
+    last = length - 1
+    fade_in = min(round(FADE_IN * fps), last)
+    fade_out = max(fade_in, last - round(FADE_OUT * fps))
+    return _filter("volume", {"level": f"0=-60;{fade_in}=0;{fade_out}=0;{last}=-60"})
+
+
+# ---------------------------------------------------------------------------- timeline
+
+
+@dataclass(frozen=True)
+class Clip:
+    """One stretch of one source, placed on one track of the final timeline, in frames."""
+
+    track: str          # ecran | large | serre | audio
+    source: str         # the producer it reads: screen_v, face_v, face_lead, screen_a, face_a
+    src_in: int         # first frame read inside the source
+    at: int             # where it lands on the final timeline
+    length: int
+    window: int | None = None  # the list card it plays behind, if any
+
+    @property
+    def end(self) -> int:
+        return self.at + self.length
+
+
+def _frame(seconds: float, fps: int) -> int:
+    return round(seconds * fps)
+
+
+def body_clips(kept, *, fps: int, offset: float, has_face: bool, mic_from_face: bool,
+               body_offset: float = 0.0, gap_after: int | None = None,
+               gap_length: float = 0.0) -> list[Clip]:
+    """Where every kept segment lands, per track, exactly as render.run concatenates them.
+
+    Positions are rounded from the running time in seconds rather than summed from rounded
+    lengths, so a long edit never drifts from the float timestamps the slide plan uses.
+    """
+    clips: list[Clip] = []
+    cursor = body_offset
+    for index, seg in enumerate(kept):
+        at = _frame(cursor, fps)
+        length = _frame(cursor + seg.duration, fps) - at
+        cursor += seg.duration
+        if length > 0:
+            if seg.scene == "ecran" or not has_face:
+                # `face` absent on a screen-only shoot: a stale EDL naming a camera shot
+                # must still show the screen, as render.py does.
+                clips.append(Clip("ecran", "screen_v", _frame(seg.start, fps), at, length))
+            else:
+                # Opening words: the camera was not recording yet. render.py freezes its
+                # first frame for the lead-in (tpad clone); face_lead is that frozen frame.
+                lead = min(length, _frame(max(0.0, offset - seg.start), fps))
+                if lead:
+                    clips.append(Clip(seg.scene, "face_lead", 0, at, lead))
+                if length > lead:
+                    clips.append(Clip(seg.scene, "face_v",
+                                      _frame(max(0.0, seg.start - offset), fps),
+                                      at + lead, length - lead))
+            # MIC_SOURCE=face reads the camera's audio at SCREEN timestamps, like
+            # render._segment_graph does ([1:a]atrim=seg.start:seg.end).
+            clips.append(Clip("audio", "face_a" if mic_from_face else "screen_a",
+                              _frame(seg.start, fps), at, length))
+        if gap_after is not None and index == gap_after:
+            cursor += gap_length  # the intro card plays here, on the slide track
+    return clips
+
+
+def split_windows(clips: list[Clip], windows: list[tuple[int, int]]) -> list[Clip]:
+    """Cut the picture clips at the list cards' edges, and tag what plays behind them.
+
+    The export blurs the composite for exactly the card's span; a producer filter can only
+    blur a whole clip, so the clips are cut to that span first.
+    """
+    out: list[Clip] = []
+    for clip in clips:
+        if clip.track == "audio":
+            out.append(clip)
+            continue
+        pieces = [clip]
+        for number, (start, end) in enumerate(windows):
+            next_pieces: list[Clip] = []
+            for piece in pieces:
+                lo, hi = max(piece.at, start), min(piece.end, end)
+                if piece.window is not None or lo >= hi:
+                    next_pieces.append(piece)
+                    continue
+                if lo > piece.at:
+                    next_pieces.append(replace(piece, length=lo - piece.at))
+                next_pieces.append(replace(
+                    piece, at=lo, length=hi - lo, window=number,
+                    src_in=piece.src_in + (0 if piece.source == "face_lead" else lo - piece.at),
+                ))
+                if hi < piece.end:
+                    next_pieces.append(replace(
+                        piece, at=hi, length=piece.end - hi,
+                        src_in=piece.src_in + (0 if piece.source == "face_lead" else hi - piece.at),
+                    ))
+            pieces = next_pieces
+        out.extend(pieces)
+    return out
+
+
+def producer_id(clip: Clip) -> str:
+    """A clip behind a list card needs its own producer, since that is where filters go."""
+    return clip.source if clip.window is None else f"{clip.source}_{clip.track}_list{clip.window}"
+
+
+def _tc(frame: int, fps: int) -> str:
+    return mlt_timecode(frame / fps)
+
+
+def _entry(producer: str, src_in: int, length: int, fps: int) -> str:
+    # `out` is the last frame PLAYED: in + length - 1.
+    return (f'    <entry producer="{producer}" in="{_tc(src_in, fps)}" '
+            f'out="{_tc(src_in + length - 1, fps)}"/>')
+
+
+def _blank(length: int, fps: int) -> str:
+    return f'    <blank length="{_tc(length, fps)}"/>'
+
+
+def _track_rows(clips: list[Clip], fps: int) -> list[str]:
+    rows: list[str] = []
+    cursor = 0
+    for clip in sorted(clips, key=lambda c: c.at):
+        if clip.at > cursor:
+            rows.append(_blank(clip.at - cursor, fps))
+        rows.append(_entry(producer_id(clip), clip.src_in, clip.length, fps))
+        cursor = clip.end
+    return rows
+
+
+# ---------------------------------------------------------------------------- slides, music
+
+
+def _slide_producers(images: list[Path], fades: list[int | None], fps: int) -> str:
+    """One producer per slide image.
+
+    `qimage` is MLT's still-image service and it honours the alpha channel, which is what
+    lets an overlay sit on top of the picture in Shotcut exactly as it does in the export.
+    This is the whole reason the slides are PNGs rather than an ffmpeg drawtext: a filter
+    cannot be imported into a project, an image can.
+
+    `fades[i]` is the overlay's length in frames when it fades (overlays), None for a card,
+    which cuts in and out like the concatenated segment it is in the export.
+    """
+    hour = 3600 * fps
+    rows = []
+    for index, (image, fade_len) in enumerate(zip(images, fades, strict=True)):
+        fade = _fade_filter(fade_len, round(OVERLAY_FADE * fps)) if fade_len else ""
+        rows.append(
+            f'  <producer id="slide{index}" out="{_tc(hour - 1, fps)}">'
+            f'{_prop("length", _tc(hour, fps))}{_prop("resource", image)}'
+            f'{_prop("mlt_service", "qimage")}{fade}</producer>'
+        )
+    return "\n".join(rows)
+
+
+def _slide_track(entries: list[tuple[int, float, float]], fps: int = 30) -> list[str]:
+    """Lay slides on their own track, separated by blanks.
+
+    Entries are (producer index, start, end) in FINAL seconds — the same numbers the
+    renderer used, so the project and the export agree.
+    """
+    rows: list[str] = []
+    cursor = 0
+    for index, start, end in sorted(entries, key=lambda e: e[1]):
+        at, stop = _frame(start, fps), _frame(end, fps)
+        if at < cursor:  # never overlap the previous slide by a rounding frame
+            at = cursor
+        if stop <= at:
+            continue
+        if at > cursor:
+            rows.append(_blank(at - cursor, fps))
+        rows.append(_entry(f"slide{index}", 0, stop - at, fps))
+        cursor = stop
+    return rows
+
+
+def _music_producers(beds, fps: int = 30) -> str:
+    """One producer per bed, audio only, each carrying its own level and fades.
+
+    Not one per file. Two beds can read the same track at very different levels — the
+    music under a card sits at speech level, the bed under speech 18 dB below it — and in
+    MLT a filter attaches to a producer, never to a playlist entry. One producer per bed is
+    what lets each stretch keep the level the render gave it.
+    """
+    hour = 3600 * fps
+    return "\n".join(
+        f'  <producer id="music{index}" out="{_tc(hour - 1, fps)}">'
+        f'<property name="length">{_tc(hour, fps)}</property>'
+        f'<property name="resource">{bed.track}</property>'
+        f'<property name="mlt_service">avformat-novalidate</property>'
+        f'<property name="video_index">-1</property>'
+        f"{_volume_filter(bed.gain_db)}"
+        f"{_music_fade(max(2, _frame(bed.end, fps) - _frame(bed.start, fps)), fps)}"
+        "</producer>"
+        for index, bed in enumerate(beds)
+    )
+
+
+def _music_track(beds, fps: int = 30) -> list[str]:
+    """Music on its own playlist, so it can be levelled or muted without touching the voice.
+
+    Each entry reads its own slice of its own track: `in`/`out` are positions INSIDE the
+    music file, the blanks before them place it on the timeline. `beds` must already be in
+    timeline order — the entry at position i refers to the producer built from bed i.
+    """
+    rows: list[str] = []
+    cursor = 0
+    for index, bed in enumerate(beds):
+        at, stop = max(cursor, _frame(bed.start, fps)), _frame(bed.end, fps)
+        if stop <= at:
+            continue
+        if at > cursor:
+            rows.append(_blank(at - cursor, fps))
+        rows.append(_entry(f"music{index}", _frame(bed.source_offset, fps), stop - at, fps))
+        cursor = stop
+    return rows
+
+
+# ---------------------------------------------------------------------------- the project
+
+
+def _chain(pid: str, resource: Path, length: int, fps: int, *, audio: bool,
+           filters: list[str] = ()) -> str:
+    """An avformat producer reading only the picture, or only the sound, of a rush."""
+    only = '<property name="audio_index">-1</property>' if not audio else \
+        '<property name="video_index">-1</property>'
+    return (
+        f'  <chain id="{pid}" out="{_tc(length - 1, fps)}">{_prop("length", _tc(length, fps))}'
+        f'{_prop("resource", resource)}{_prop("mlt_service", "avformat-novalidate")}{only}'
+        f'{"".join(filters)}</chain>'
+    )
+
+
 def build(ep: Episode, plan: Edl, layout: SlidePlan | None = None) -> str:
     cfg = ep.cfg
+    fps = cfg.out_fps
     kept = plan.kept
     screen = ep.screen.resolve()
     screen_dur = ffprobe_duration(screen)
     face = ep.face.resolve() if ep.has_face else None
     face_dur = ffprobe_duration(face) if face else screen_dur
     offset = camera_offset(ep)
-    total = sum(seg.duration for seg in kept)
+    params = json.loads(ep.params.read_text()) if ep.params.is_file() else {}
 
     dar_w, dar_h = display_aspect(cfg.out_w, cfg.out_h)
-
     cam = ffprobe_dimensions(face) if face else None
-    full_frame = cover_rect(cam, cfg.out_w, cfg.out_h)
-    zoom_rect = cover_rect(cam, cfg.out_w, cfg.out_h, zoom=cfg.zoom_scale)
+    scr = ffprobe_dimensions(screen)
 
-    # Each track holds an entry where it is the active shot, and a blank everywhere else,
-    # so the three tracks stay aligned on the same timeline.
-    track_ecran: list[str] = []
-    track_large: list[str] = []
-    track_serre: list[str] = []
-    track_audio: list[str] = []
-
-    # An intro card pushes the body back. In the project that is a blank of the same
-    # length on every existing track, so the body sits where the export puts it.
-    # It is a LEADING blank only when the card opens the video; since the card now lands
-    # after the spoken summary, the blank is inserted at that point instead — otherwise
-    # the project drifts out of sync with final.mp4 by the length of the card.
-    body_offset = layout.body_offset if layout else 0.0
+    # --- the body, in frames, cut where the list cards blur it
     intro_card = next((c for c in layout.cards if c.kind == "intro"), None) if layout else None
-    gap_after = intro_card.after_index if intro_card else None
-    gap_length = intro_card.duration if intro_card else 0.0
-    if body_offset > 0:
-        for track in (track_ecran, track_large, track_serre, track_audio):
-            track.append(_blank(body_offset))
+    clips = body_clips(
+        kept, fps=fps, offset=offset, has_face=bool(face), mic_from_face=cfg.mic_from_face,
+        body_offset=layout.body_offset if layout else 0.0,
+        gap_after=intro_card.after_index if intro_card else None,
+        gap_length=intro_card.duration if intro_card else 0.0,
+    )
+    windows = [
+        (_frame(o.start, fps), _frame(o.end, fps))
+        for o in (layout.overlays if layout else []) if o.kind == "list"
+    ]
+    clips = split_windows(clips, windows)
 
-    for index, seg in enumerate(kept):
-        cam_start = max(0.0, seg.start - offset)
-        cam_end = seg.end - offset
-        lead = max(0.0, offset - seg.start)
-        face_clip = ([_blank(lead)] if lead > 0 else []) + [_entry("face_v", cam_start, cam_end)]
+    # How much the framing enlarges each track's source: the list blur is scaled by it.
+    scales = {
+        "ecran": cover_scale(scr, cfg.out_w, cfg.out_h),
+        "large": cover_scale(cam, cfg.out_w, cfg.out_h),
+        "serre": cover_scale(cam, cfg.out_w, cfg.out_h, zoom=cfg.zoom_scale),
+    }
 
-        track_ecran.append(
-            _entry("screen_v", seg.start, seg.end) if seg.scene == "ecran" else _blank(seg.duration)
-        )
-        # `face` is None on a screen-only shoot: the camera tracks stay in the project for
-        # the track indexes below, but nothing may reference a producer that plays black —
-        # a stale EDL would otherwise put ten seconds of black over the screen in Shotcut
-        # while final.mp4 shows the screen.
-        wide = face_clip if (face and seg.scene == "large") else [_blank(seg.duration)]
-        close = face_clip if (face and seg.scene == "serre") else [_blank(seg.duration)]
-        track_large.extend(wide)
-        track_serre.extend(close)
-        track_audio.append(_entry("screen_a", seg.start, seg.end))
+    screen_len = max(1, _frame(screen_dur, fps))
+    face_len = max(1, _frame(face_dur, fps))
+    producers: dict[str, str] = {}
 
-        if gap_after is not None and index == gap_after:
-            # The intro card plays here: the video tracks hold nothing, the card is on the
-            # slide track and its music on the music track.
-            for track in (track_ecran, track_large, track_serre, track_audio):
-                track.append(_blank(gap_length))
+    def base(source: str, pid: str, extra: list[str]) -> str:
+        if source == "screen_v":
+            return _chain(pid, screen, screen_len, fps, audio=False, filters=extra)
+        if source == "screen_a":
+            return _chain(pid, screen, screen_len, fps, audio=True, filters=extra)
+        if source == "face_a":
+            return _chain(pid, face, face_len, fps, audio=True, filters=extra)
+        if source == "face_lead":
+            # A still of the camera's first frame, for the words said before it started.
+            freeze = _filter("freeze", {"frame": 0, "freeze_after": 1})
+            return _chain(pid, face, face_len, fps, audio=False, filters=[freeze, *extra])
+        return _chain(pid, face, face_len, fps, audio=False, filters=extra)
+
+    for clip in clips:
+        pid = producer_id(clip)
+        if pid not in producers:
+            extra = _list_filters(scales[clip.track]) if clip.window is not None else []
+            producers[pid] = base(clip.source, pid, extra)
+    # The track heads below need these to exist even when no clip uses them.
+    if face is None:
+        # The wide and close-up tracks stay in the project even when there is no camera,
+        # so the track indexes in the transitions are the same in both cases.
+        producers.setdefault("face_v", f'  <producer id="face_v" out="{_tc(face_len - 1, fps)}">'
+                             f'{_prop("length", _tc(face_len, fps))}'
+                             f'{_prop("mlt_service", "color")}{_prop("resource", "0")}</producer>')
+
+    by_track = {name: [c for c in clips if c.track == name]
+                for name in ("ecran", "large", "serre", "audio")}
 
     # --- slides: cards and overlays share one track, in final-timeline order
     slide_images: list[Path] = []
+    slide_fades: list[int | None] = []
     slide_entries: list[tuple[int, float, float]] = []
     if layout:
         from . import compose
@@ -220,13 +546,15 @@ def build(ep: Episode, plan: Edl, layout: SlidePlan | None = None) -> str:
         for image, card in zip(cards, layout.cards, strict=True):
             slide_entries.append((len(slide_images), card.start, card.end))
             slide_images.append(image)
+            slide_fades.append(None)
         for image, overlay in zip(overlays, layout.overlays, strict=True):
             slide_entries.append((len(slide_images), overlay.start, overlay.end))
             slide_images.append(image)
+            slide_fades.append(_frame(overlay.end, fps) - _frame(overlay.start, fps))
 
     # --- music: its own playlist, so it can be levelled or muted without touching the voice
     music_beds = []
-    if layout and (layout.cards or layout.overlays):
+    if cfg.music and layout and (layout.cards or layout.overlays):
         from . import music as music_mod
 
         found = sorted((ep.work / "music").glob("*/*.mp3"))
@@ -243,88 +571,84 @@ def build(ep: Episode, plan: Edl, layout: SlidePlan | None = None) -> str:
             )
             music_beds.sort(key=lambda bed: bed.start)
 
-    track_music = _music_track(music_beds) if music_beds else []
-    music_producers = _music_producers(music_beds) if music_beds else ""
-    music_playlist = (
-        f'  <playlist id="track_music">\n{chr(10).join(track_music)}\n  </playlist>'
-        if track_music
-        else ""
-    )
-    music_track_ref = '    <track producer="track_music" hide="video"/>' if track_music else ""
-
-    track_slides = _slide_track(slide_entries)
-    slide_producers = _slide_producers(slide_images)
-    slides_playlist = (
-        f'  <playlist id="track_slides">\n{chr(10).join(track_slides)}\n  </playlist>'
-        if track_slides
-        else ""
-    )
-    slides_track_ref = '    <track producer="track_slides"/>' if track_slides else ""
-    slides_transition = (
-        '    <transition mlt_service="frei0r.cairoblend">'
-        '<property name="a_track">0</property><property name="b_track">4</property>'
-        "</transition>"
-        if track_slides
-        else ""
-    )
-
-    # The wide and close-up tracks stay in the project even when there is no camera: they
-    # are empty, and keeping them means the track indexes in the transitions below are the
-    # same in both cases. Their producer then has to resolve to something — a black colour
-    # clip rather than a path to a file that is not there, which Shotcut would refuse to
-    # open.
-    face_producer = (
-        f'<chain id="face_v" out="{tc(face_dur)}"><property name="length">{tc(face_dur)}</property>'
-        f'<property name="resource">{face}</property>'
-        '<property name="mlt_service">avformat-novalidate</property>'
-        '<property name="audio_index">-1</property></chain>'
-        if face
-        else f'<producer id="face_v" out="{tc(face_dur)}"><property name="length">{tc(face_dur)}</property>'
-        '<property name="mlt_service">color</property><property name="resource">0</property></producer>'
-    )
+    # The black background runs under everything, cards included: the outro plays past
+    # the body, and a tractor ends with its longest track.
+    ends = [c.end for c in clips] + [_frame(e, fps) for _, _, e in slide_entries]
+    total = max(ends, default=1)
 
     nl = "\n"
+    track_music = _music_track(music_beds, fps) if music_beds else []
+    music_block = (
+        f"{_music_producers(music_beds, fps)}\n"
+        f'  <playlist id="track_music">\n{nl.join(track_music)}\n  </playlist>'
+        if track_music else ""
+    )
+    track_slides = _slide_track(slide_entries, fps)
+    slides_block = (
+        f"{_slide_producers(slide_images, slide_fades, fps)}\n"
+        f'  <playlist id="track_slides">\n{nl.join(track_slides)}\n  </playlist>'
+        if track_slides else ""
+    )
+
+    # Track heads: the framing, and the correction measured on the camera. Correction
+    # first, as in render._segment_graph, so it works on the camera's own pixels.
+    correction = av_filters(params.get("video_filter", "")) if face else []
+    screen_head = (
+        [_size_position(cover_rect(scr, cfg.out_w, cfg.out_h))]
+        if scr and scr != (cfg.out_w, cfg.out_h) else []
+    )
+    large_head = [*correction, _size_position(cover_rect(cam, cfg.out_w, cfg.out_h))]
+    serre_head = [*correction,
+                  _size_position(cover_rect(cam, cfg.out_w, cfg.out_h, zoom=cfg.zoom_scale))]
+    voice_head = audio_filters(params.get("audio_filter", ""))
+
+    def playlist(pid: str, rows: list[str], head: list[str]) -> str:
+        heads = "".join(f"\n    {f}" for f in head)
+        return f'  <playlist id="{pid}">\n{nl.join(rows)}{heads}\n  </playlist>'
+
+    audio_index = 5 if track_slides else 4
+    tracks = [
+        '    <track producer="black"/>',
+        '    <track producer="track_ecran"/>',
+        '    <track producer="track_large"/>',
+        '    <track producer="track_serre"/>',
+        *(['    <track producer="track_slides"/>'] if track_slides else []),
+        '    <track producer="track_audio" hide="video"/>',
+        *(['    <track producer="track_music" hide="video"/>'] if track_music else []),
+    ]
+
+    def blend(b: int) -> str:
+        return ('    <transition mlt_service="frei0r.cairoblend">'
+                f'{_prop("a_track", 0)}{_prop("b_track", b)}</transition>')
+
+    def mix(b: int) -> str:
+        return ('    <transition mlt_service="mix">'
+                f'{_prop("a_track", 0)}{_prop("b_track", b)}'
+                f'{_prop("always_active", 1)}{_prop("sum", 1)}</transition>')
+
+    transitions = [blend(1), blend(2), blend(3)]
+    if track_slides:
+        transitions.append(blend(4))
+    transitions.append(mix(audio_index))
+    if track_music:
+        transitions.append(mix(audio_index + 1))
+
     return f"""<?xml version="1.0" encoding="utf-8"?>
 <mlt LC_NUMERIC="C" version="7.40.0" title="screencast">
-  <profile description="{cfg.out_h}p {cfg.out_fps} fps" width="{cfg.out_w}" height="{cfg.out_h}" progressive="1"
+  <profile description="{cfg.out_h}p {fps} fps" width="{cfg.out_w}" height="{cfg.out_h}" progressive="1"
     sample_aspect_num="1" sample_aspect_den="1" display_aspect_num="{dar_w}" display_aspect_den="{dar_h}"
-    frame_rate_num="{cfg.out_fps}" frame_rate_den="1" colorspace="709"/>
-  <producer id="black" out="{tc(total)}"><property name="length">{tc(total)}</property><property name="mlt_service">color</property><property name="resource">0</property></producer>
-  <chain id="screen_v" out="{tc(screen_dur)}"><property name="length">{tc(screen_dur)}</property><property name="resource">{screen}</property><property name="mlt_service">avformat-novalidate</property><property name="audio_index">-1</property></chain>
-  {face_producer}
-  <chain id="screen_a" out="{tc(screen_dur)}"><property name="length">{tc(screen_dur)}</property><property name="resource">{screen}</property><property name="mlt_service">avformat-novalidate</property><property name="video_index">-1</property></chain>
-  <playlist id="track_ecran">
-{nl.join(track_ecran)}
-  </playlist>
-  <playlist id="track_large">
-{nl.join(track_large)}
-    {_size_position(full_frame)}
-  </playlist>
-  <playlist id="track_serre">
-{nl.join(track_serre)}
-    {_size_position(zoom_rect)}
-  </playlist>
-{slide_producers}
-{music_producers}
-  <playlist id="track_audio">
-{nl.join(track_audio)}
-  </playlist>
-{slides_playlist}
-{music_playlist}
+    frame_rate_num="{fps}" frame_rate_den="1" colorspace="709"/>
+  <producer id="black" out="{_tc(total - 1, fps)}">{_prop("length", _tc(total, fps))}{_prop("mlt_service", "color")}{_prop("resource", "0")}</producer>
+{nl.join(producers.values())}
+{playlist("track_ecran", _track_rows(by_track["ecran"], fps), screen_head)}
+{playlist("track_large", _track_rows(by_track["large"], fps), large_head)}
+{playlist("track_serre", _track_rows(by_track["serre"], fps), serre_head)}
+{playlist("track_audio", _track_rows(by_track["audio"], fps), voice_head)}
+{slides_block}
+{music_block}
   <tractor id="main">
-    <track producer="black"/>
-    <track producer="track_ecran"/>
-    <track producer="track_large"/>
-    <track producer="track_serre"/>
-{slides_track_ref}
-    <track producer="track_audio" hide="video"/>
-{music_track_ref}
-    <transition mlt_service="frei0r.cairoblend"><property name="a_track">0</property><property name="b_track">1</property></transition>
-    <transition mlt_service="frei0r.cairoblend"><property name="a_track">0</property><property name="b_track">2</property></transition>
-    <transition mlt_service="frei0r.cairoblend"><property name="a_track">0</property><property name="b_track">3</property></transition>
-{slides_transition}
-    <transition mlt_service="mix"><property name="a_track">0</property><property name="b_track">{5 if track_slides else 4}</property><property name="always_active">1</property><property name="sum">1</property></transition>
-{f'    <transition mlt_service="mix"><property name="a_track">0</property><property name="b_track">{(6 if track_slides else 5)}</property><property name="always_active">1</property><property name="sum">1</property></transition>' if track_music else ""}
+{nl.join(tracks)}
+{nl.join(transitions)}
   </tractor>
 </mlt>
 """
@@ -336,3 +660,53 @@ def run(ep: Episode, plan: Edl, layout: SlidePlan | None = None) -> None:
     log(f"project -> {ep.project}")
     log("  3 video tracks: ecran / large / serre, plus slides, mic and music on their own")
     log("  with the 'Size Position Rotate' filter — serre already carries the zoom.")
+
+
+# ---------------------------------------------------------------------------- melt render
+
+
+def melt_command(ep: Episode, project: Path, out: Path, *,
+                 start: float | None = None, end: float | None = None) -> list[str | Path]:
+    """melt-7 rendering `project` with the encoder settings render.py uses.
+
+    `real_time=-1`: one rendering thread, frames in order. Parallel frame rendering
+    (Shotcut's default export) hands consecutive audio blocks to different threads, and
+    the voice chain — noise reduction, levelling — carries state from one block to the
+    next. x264 still uses every core.
+    """
+    cfg = ep.cfg
+    cmd: list[str | Path] = [cfg.melt_bin, "-quiet", project]
+    if start is not None:
+        cmd.append(f"in={_frame(start, cfg.out_fps)}")
+    if end is not None:
+        cmd.append(f"out={_frame(end, cfg.out_fps) - 1}")
+    cmd += [
+        "-consumer", f"avformat:{out}",
+        "vcodec=libx264", "preset=veryfast", f"crf={cfg.draft_crf}", "pix_fmt=yuv420p",
+        "acodec=aac", "ab=192k", "ar=48000", "channels=2",
+        "movflags=+faststart", "real_time=-1", "terminate_on_pause=1",
+    ]
+    return cmd
+
+
+def render(ep: Episode, plan: Edl, layout: SlidePlan | None = None, *,
+           project: Path | None = None, out: Path | None = None) -> Path:
+    """The `render` stage when RENDERER="melt": write the project, then play it to a file.
+
+    The music has to exist before the project is written, since the project only points
+    at it; the ffmpeg path generates it last, the melt path first.
+    """
+    project = project or ep.project
+    out = out or ep.draft
+    if ep.cfg.music and layout and layout.cards:
+        from . import compose
+
+        compose.generate_music(ep, layout, plan.metadata)
+    project.write_text(build(ep, plan, layout))
+    log(f"project -> {project}")
+    partial = out.with_name(out.stem + ".part" + out.suffix)
+    log(f"melt -> {out}")
+    run_tool(melt_command(ep, project, partial), passthrough_stderr=True)
+    partial.replace(out)  # a killed render never leaves a half file under the real name
+    log(f"draft -> {out}")
+    return out
