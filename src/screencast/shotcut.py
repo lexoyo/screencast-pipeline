@@ -409,6 +409,23 @@ def _slide_track(entries: list[tuple[int, float, float]], fps: int = 30) -> list
     return rows
 
 
+def hold_last_card(entries: list[tuple[int, float, float]], cards: int, video_end: int,
+                   music_end: int, fps: int) -> list[tuple[int, float, float]]:
+    """Stretch the card that closes the video until the music under it has faded out.
+
+    `entries` are (producer index, start, end) with the cards first (indexes below
+    `cards`). Only a card ending the video is held — an overlay never is, it would cover
+    the body.
+    """
+    if music_end <= video_end:
+        return entries
+    out = list(entries)
+    for i, (index, start, end) in enumerate(out):
+        if index < cards and _frame(end, fps) >= video_end:
+            out[i] = (index, start, music_end / fps)
+    return out
+
+
 def _music_producers(beds, fps: int = 30) -> str:
     """One producer per bed, audio only, each carrying its own level and fades.
 
@@ -575,6 +592,14 @@ def build(ep: Episode, plan: Edl, layout: SlidePlan | None = None) -> str:
     # the body, and a tractor ends with its longest track.
     ends = [c.end for c in clips] + [_frame(e, fps) for _, _, e in slide_entries]
     total = max(ends, default=1)
+    # The outro's music runs 1.4 s past the card (music.TAIL). The ffmpeg render mixes it
+    # onto a picture that has already ended, so a player holds the outro's last frame while
+    # it fades; here the tractor would run on into 1.4 s of black instead. Holding the last
+    # card to the end of the music is what the export looks like.
+    music_end = max((_frame(bed.end, fps) for bed in music_beds), default=0)
+    slide_entries = hold_last_card(slide_entries, len(layout.cards) if layout else 0,
+                                   total, music_end, fps)
+    total = max(total, music_end)
 
     nl = "\n"
     track_music = _music_track(music_beds, fps) if music_beds else []

@@ -20,6 +20,7 @@ from screencast.shotcut import (
     audio_filters,
     av_filters,
     body_clips,
+    hold_last_card,
     parse_chain,
     producer_id,
     split_windows,
@@ -181,6 +182,20 @@ def test_an_overlay_fades_its_alpha_only():
     xml = _fade_filter(105, 8)
     assert 'name="alpha">0=0;8=1;96=1;104=0' in xml
     assert 'name="level">1<' in xml  # the card must not darken as it fades
+
+
+def test_the_outro_holds_while_its_music_fades_instead_of_cutting_to_black():
+    # cards first (index 0 = intro, 1 = outro), then an overlay ending at the same frame
+    entries = [(0, 10.0, 16.0), (1, 100.0, 104.0), (2, 102.0, 104.0)]
+    held = hold_last_card(entries, cards=2, video_end=3120, music_end=3162, fps=30)
+    assert held[1] == (1, 100.0, 105.4)
+    assert held[0] == entries[0]  # the intro sits mid-video
+    assert held[2] == entries[2]  # an overlay is never stretched
+
+
+def test_nothing_is_held_when_the_music_stops_with_the_picture():
+    entries = [(0, 100.0, 104.0)]
+    assert hold_last_card(entries, cards=1, video_end=3120, music_end=3000, fps=30) == entries
 
 
 def test_slides_never_overlap_by_a_rounding_frame():
