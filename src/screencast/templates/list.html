@@ -4,9 +4,10 @@
 <style>
 /* A spoken enumeration point. Louder than a chapter overlay on purpose: this IS the
  * subject of the moment, where a chapter title is only a signpost. The picture behind it
- * is blurred and dimmed by ffmpeg, not here — a CSS backdrop-filter cannot reach it. */
+ * is blurred and dimmed in the project (shotcut._list_filters), not here — a CSS
+ * backdrop-filter cannot reach it. */
 /* The card carries its own background. It used to put white on nothing and rely on the
- * gblur+eq of compose.py — but a blur does not darken. Measured over a white screen the
+ * blur and dim behind it — but a blur does not darken. Measured over a white screen the
  * text came out at 1.5:1, and 1.8:1 over the wp-admin grey, against a 3:1 floor. It never
  * showed on a dark UI; it would have broken on the first WordPress capture. 14.6:1 now.
  * Never let legibility depend on a filter applied to content we do not control. */

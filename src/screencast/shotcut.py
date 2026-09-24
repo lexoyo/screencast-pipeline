@@ -24,16 +24,23 @@ from math import gcd
 from pathlib import Path
 from xml.sax.saxutils import escape
 
+from . import master, music, slides
 from .episode import Episode
 from .shell import ffprobe_dimensions, ffprobe_duration, log, loudness_lufs
 from .shell import run as run_tool
-from .slideplan import SlidePlan
+from .slideplan import Overlay, SlidePlan
 from .sync import camera_offset
 from .timecode import mlt_timecode
 from .timeline import Edl
 
-# The overlays fade in and out over this long, like compose.overlay_graph's default.
+# The overlays fade in and out over this long.
 OVERLAY_FADE = 0.25
+
+# What a list card does to the picture behind it. The blur is what makes the text readable
+# and shifts attention onto it; without it the card competes with a moving shot.
+LIST_BLUR = 26
+LIST_DARKEN = -0.14
+LIST_DESATURATE = 0.55
 
 
 def display_aspect(width: int, height: int) -> tuple[int, int]:
@@ -182,15 +189,13 @@ def audio_filters(chain: str) -> list[str]:
 
 
 def _list_filters(blur_px: float) -> list[str]:
-    """What a list card does to the picture behind it — compose.overlay_graph's blur+dim.
+    """What a list card does to the picture behind it: blurred, darkened, desaturated.
 
     Applied to the clip rather than on top of the composite, because a filter in MLT
     belongs to a producer. The blur therefore runs on the source, before the framing
-    scales it: `blur_px` is the output-pixel sigma divided by that scale, so the blur
-    looks the same size as in the export.
+    scales it: `blur_px` is the output-pixel sigma divided by that scale, so the blur is
+    LIST_BLUR pixels wide in the video whatever the framing.
     """
-    from .compose import LIST_BLUR, LIST_DARKEN, LIST_DESATURATE
-
     return [
         _filter("avfilter.gblur", {"av.sigma": f"{LIST_BLUR / blur_px:.2f}"}),
         _filter("avfilter.eq", {"av.brightness": LIST_DARKEN,
@@ -199,11 +204,10 @@ def _list_filters(blur_px: float) -> list[str]:
 
 
 def _fade_filter(length: int, fade: int) -> str:
-    """An alpha fade in and out, as compose.overlay_graph does with fade=...:alpha=1.
+    """An alpha fade in and out.
 
     `brightness` with `level` held at 1 and `alpha` keyframed touches only the alpha
-    channel: letting the level follow would darken the card as it fades, which the
-    export does not do.
+    channel: letting the level follow would darken the card as it fades.
     """
     fade = max(1, min(fade, length // 2))
     last = length - 1
@@ -227,12 +231,10 @@ def _volume_filter(db: float) -> str:
 
 
 def _music_fade(length: int, fps: int) -> str:
-    """music.mix_filter's afade in and out, as a keyframed volume level."""
-    from .music import FADE_IN, FADE_OUT
-
+    """The music's fade in and out (music.FADE_IN, music.FADE_OUT), as a keyframed volume."""
     last = length - 1
-    fade_in = min(round(FADE_IN * fps), last)
-    fade_out = max(fade_in, last - round(FADE_OUT * fps))
+    fade_in = min(round(music.FADE_IN * fps), last)
+    fade_out = max(fade_in, last - round(music.FADE_OUT * fps))
     return _filter("volume", {"level": f"0=-60;{fade_in}=0;{fade_out}=0;{last}=-60"})
 
 
@@ -363,6 +365,53 @@ def _track_rows(clips: list[Clip], fps: int) -> list[str]:
 
 
 # ---------------------------------------------------------------------------- slides, music
+
+
+def render_slides(ep: Episode, layout: SlidePlan) -> tuple[list[Path], list[Path]]:
+    """Render every slide once, as PNGs the project points at.
+
+    Drawn straight at the output frame: an overlay is composited pixel for pixel, so a
+    card rendered at another size would be either misaligned or resampled. What Shotcut
+    shows when the project is opened is what was exported.
+    """
+    ep.slidedir.mkdir(parents=True, exist_ok=True)
+    frame = {"width": ep.cfg.out_w, "height": ep.cfg.out_h}
+    cards = [
+        slides.render(card.kind, card.values, ep.slidedir / f"card{index:02d}.png",
+                      theme=layout.theme, **frame)
+        for index, card in enumerate(layout.cards)
+    ]
+    overlays = [
+        slides.render(overlay.kind, _overlay_values(overlay),
+                      ep.slidedir / f"overlay{index:02d}.png", theme=layout.theme, **frame)
+        for index, overlay in enumerate(layout.overlays)
+    ]
+    return cards, overlays
+
+
+def _overlay_values(overlay: Overlay) -> dict[str, str]:
+    """Turn a programme's list of points into the markup its template expects."""
+    values = dict(overlay.values)
+    if overlay.kind == "plan":
+        points = values.pop("chapters", [])
+        values["items"] = slides.list_items(
+            [(f"{n:02d}", label) for n, label in enumerate(points, start=1)]
+        )
+    return values
+
+
+def generate_music(ep: Episode, layout: SlidePlan, plan_meta) -> dict[str, Path]:
+    """The tracks under the cards, generated before the project that points at them."""
+    # The sung lines come from `jingle`; the card titles are the fallback for an EDL
+    # produced before that field existed.
+    return music.build_tracks(
+        ep,
+        layout,
+        intro_lyrics=plan_meta.jingle.get("intro")
+        or (plan_meta.intro.title if plan_meta.intro else ""),
+        outro_lyrics=plan_meta.jingle.get("outro")
+        or (plan_meta.outro.title if plan_meta.outro else ""),
+    )
 
 
 def _slide_producers(images: list[Path], fades: list[int | None], fps: int) -> str:
@@ -557,9 +606,7 @@ def build(ep: Episode, plan: Edl, layout: SlidePlan | None = None) -> str:
     slide_fades: list[int | None] = []
     slide_entries: list[tuple[int, float, float]] = []
     if layout:
-        from . import compose
-
-        cards, overlays = compose.render_all(ep, layout)
+        cards, overlays = render_slides(ep, layout)
         for image, card in zip(cards, layout.cards, strict=True):
             slide_entries.append((len(slide_images), card.start, card.end))
             slide_images.append(image)
@@ -572,15 +619,13 @@ def build(ep: Episode, plan: Edl, layout: SlidePlan | None = None) -> str:
     # --- music: its own playlist, so it can be levelled or muted without touching the voice
     music_beds = []
     if cfg.music and layout and (layout.cards or layout.overlays):
-        from . import music as music_mod
-
         found = sorted((ep.work / "music").glob("*/*.mp3"))
         by_kind = {path.parent.name: path for path in found}
         if by_kind:
             # Measured, not assumed: without it every bed would sit at 0 dB, whatever
             # level the generator happened to produce.
-            music_beds = music_mod.with_gains(
-                music_mod.plan_beds(layout, by_kind), cfg.audio_lufs, loudness_lufs,
+            music_beds = music.with_gains(
+                music.plan_beds(layout, by_kind), cfg.audio_lufs, loudness_lufs,
             )
             music_beds.sort(key=lambda bed: bed.start)
 
@@ -722,13 +767,9 @@ def render(ep: Episode, plan: Edl, layout: SlidePlan | None = None, *,
     project = project or ep.project
     out = out or ep.draft
     if ep.cfg.music and layout and layout.cards:
-        from . import compose
-
-        compose.generate_music(ep, layout, plan.metadata)
+        generate_music(ep, layout, plan.metadata)
     project.write_text(build(ep, plan, layout))
     log(f"project -> {project}")
-    from . import master
-
     mix = out.with_name(out.stem + ".melt.mkv")
     partial = out.with_name(out.stem + ".part" + out.suffix)
     log(f"melt -> {mix}")
