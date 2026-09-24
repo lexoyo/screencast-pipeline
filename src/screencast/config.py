@@ -174,7 +174,7 @@ def load(config_path: Path, overrides: dict[str, str] | None = None) -> Config:
 
     # Who makes draft.mp4: ffmpeg directly, or melt-7 playing the Shotcut project. The
     # second is on trial — if it gives the same video, the edit can move to Shotcut.
-    renderer = _get(raw, "RENDERER", "ffmpeg")
+    renderer = _get(raw, "RENDERER", "melt")
     if renderer not in ("ffmpeg", "melt"):
         raise ConfigError(f"config.env: RENDERER={renderer!r} must be 'ffmpeg' or 'melt'")
 
