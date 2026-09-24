@@ -86,7 +86,11 @@ def translate_metadata(ep: Episode, prompts_dir: Path, plan: Edl,
     """
     cache = ep.work / f"meta_{target}.json"
     if cache.is_file():
-        return json.loads(cache.read_text())
+        # Through the glossary on the way out too: the cache holds what a model wrote, and
+        # it outlives the run that produced it. A term added to the glossary today has to
+        # reach a translation cached yesterday — otherwise fixing a name only takes effect
+        # for episodes nobody has translated yet, which is the opposite of the point.
+        return fix_names(json.loads(cache.read_text()), glossary.load())
 
     meta = plan.metadata
     payload = {
