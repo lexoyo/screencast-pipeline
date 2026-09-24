@@ -118,24 +118,6 @@ def generate(ep, vibe: str, seconds: int, *, out_dir: Path, prompts: Path) -> Pa
     return produced[0]
 
 
-def _merge(spans: list[tuple[float, float]]) -> list[tuple[float, float]]:
-    """Widen each span by the overrun, then merge those that end up touching.
-
-    Two fades crossing each other sound like a mistake; one continuous stretch sounds like
-    a decision.
-    """
-    if not spans:
-        return []
-    widened = sorted((max(0.0, s - LEAD_IN), e + TAIL) for s, e in spans)
-    merged = [list(widened[0])]
-    for start, end in widened[1:]:
-        if start <= merged[-1][1]:
-            merged[-1][1] = max(merged[-1][1], end)
-        else:
-            merged.append([start, end])
-    return [(a, b) for a, b in merged]
-
-
 def with_gains(beds: list[Bed], speech_lufs: float, measure) -> list[Bed]:
     """Set each bed's gain from the loudness of the stretch it actually plays.
 
