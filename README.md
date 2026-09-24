@@ -142,7 +142,7 @@ EN, EN shoots to FR.
 | `transcribe` | whisper.cpp | transcript with word-level timings |
 | `silences` | ffmpeg | the quiet gaps, from the signal |
 | `montage` | a model | the edit: cuts, shots, chapters, metadata — **from the text alone** |
-| `render` | ffmpeg | `final.mp4` |
+| `render` | ffmpeg, or melt-7 (`RENDERER=melt`) | `final.mp4` |
 | `shotcut` | — | `project.mlt` |
 | `subtitles` | whisper.cpp + a model | native `.srt` + translation |
 | `publish` | — | packages the deliverable; **gated, uploads nothing** |
@@ -223,6 +223,14 @@ through GLM-5.2 on a 16-minute episode, the QC pass answers in 9 s.
 per shot type**, with a Size/Position/Rotate filter on each track head, so reframing the
 close-up means adjusting one filter rather than thirty clips. Both rushes must stay where
 they are: the project references them by path.
+
+The project carries everything the ffmpeg render does — the measured camera correction on
+the camera tracks, the voice chain on the mic track, the blur behind the list cards, the
+overlay fades, the music levels and fades — so it can also be *the* render:
+`RENDERER="melt"` in config.env (or `--renderer melt` for one run) makes the `render` stage
+write `project.mlt` and play it to `draft.mp4` with `melt-7`. melt hands the mix over
+lossless and one audio-only ffmpeg pass masters it — two-pass loudnorm to `AUDIO_LUFS`, the
+true peak checked after the AAC encode — with the picture copied, not re-encoded.
 
 ## Shooting notes, learned the hard way
 
