@@ -142,7 +142,7 @@ EN, EN shoots to FR.
 | `transcribe` | whisper.cpp | transcript with word-level timings |
 | `silences` | ffmpeg | the quiet gaps, from the signal |
 | `montage` | a model | the edit: cuts, shots, chapters, metadata — **from the text alone** |
-| `render` | ffmpeg, or melt-7 (`RENDERER=melt`) | `final.mp4` |
+| `render` | melt-7, playing the Shotcut project | `final.mp4` |
 | `shotcut` | — | `project.mlt` |
 | `subtitles` | whisper.cpp + a model | native `.srt` + translation |
 | `publish` | — | packages the deliverable; **gated, uploads nothing** |
@@ -219,16 +219,17 @@ through GLM-5.2 on a 16-minute episode, the QC pass answers in 9 s.
 
 ## Two outputs, on purpose
 
-`final.mp4` is a deterministic ffmpeg render — ship it. `project.mlt` carries **one track
+`final.mp4` is `project.mlt` played by melt-7 — ship it. The project carries **one track
 per shot type**, with a Size/Position/Rotate filter on each track head, so reframing the
 close-up means adjusting one filter rather than thirty clips. Both rushes must stay where
 they are: the project references them by path.
 
-The project carries everything the ffmpeg render does — the measured camera correction on
-the camera tracks, the voice chain on the mic track, the blur behind the list cards, the
-overlay fades, the music levels and fades — so it can also be *the* render:
-`RENDERER="melt"` in config.env (or `--renderer melt` for one run) makes the `render` stage
-write `project.mlt` and play it to `draft.mp4` with `melt-7`. melt hands the mix over
+The project carries the whole edit — the measured camera correction on the camera tracks,
+the voice chain on the mic track, the blur behind the list cards, the overlay fades, the
+music levels and fades — and it IS the render: the `render` stage writes `project.mlt` and
+plays it to `draft.mp4` with `melt-7`, so what you open in Shotcut is exactly what was
+exported. There used to be a separate ffmpeg render; it drifted half a second against the
+edit over 21 minutes, and needed 7 GB to lay the slides on. melt hands the mix over
 lossless and one audio-only ffmpeg pass masters it — two-pass loudnorm to `AUDIO_LUFS`, the
 true peak checked after the AAC encode — with the picture copied, not re-encoded.
 

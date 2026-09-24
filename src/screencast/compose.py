@@ -1,14 +1,7 @@
-"""Put the slides onto the rendered video.
+"""The slides and the music, shared by the Shotcut project that renders the video.
 
-Two operations, deliberately separate from the segment rendering:
-
-- a **card** becomes a video segment of its own, concatenated with the body;
-- an **overlay** is composited onto the assembled video in a single pass.
-
-Overlays are applied after concatenation rather than during segment rendering, because an
-overlay's timing belongs to the finished timeline: one that starts near a cut would
-otherwise have to be split across two segments and stitched back, and the arithmetic for
-that is exactly the kind that goes wrong silently.
+The images are drawn once, at the output frame, and the project points at them: what
+Shotcut shows when the project is opened is what was exported.
 """
 
 from __future__ import annotations
@@ -17,8 +10,7 @@ from pathlib import Path
 
 from . import music, slides
 from .episode import Episode
-from .shell import ffmpeg, ffprobe_duration, log, loudness_lufs
-from .slideplan import DEFAULT_THEME, Card, Overlay, SlidePlan
+from .slideplan import Overlay, SlidePlan
 
 # What a list card does to the picture behind it. The blur is what makes the text readable
 # and shifts attention onto it; without it the card competes with a moving shot.
@@ -28,11 +20,7 @@ LIST_DESATURATE = 0.55
 
 
 def render_all(ep: Episode, layout: SlidePlan) -> tuple[list[Path], list[Path]]:
-    """Render every slide once, for both consumers.
-
-    The rendered video and the Shotcut project must show the same images: two renderers
-    would drift, and the whole point of the project file is that it matches what was
-    exported.
+    """Render every slide once, as PNGs the Shotcut project points at.
     """
     ep.slidedir.mkdir(parents=True, exist_ok=True)
     # Drawn straight at the output frame: an overlay is composited pixel for pixel, so a
@@ -62,124 +50,8 @@ def _overlay_values(overlay: Overlay) -> dict[str, str]:
     return values
 
 
-def render_card(ep: Episode, card: Card, index: int, *, audio: Path | None = None,
-                theme: str = DEFAULT_THEME) -> Path:
-    """Turn a card into a video segment, silent unless music is supplied."""
-    cfg = ep.cfg
-    image = slides.render(card.kind, card.values, ep.slidedir / f"card{index:02d}.png",
-                          theme=theme, width=cfg.out_w, height=cfg.out_h)
-    out = ep.segdir / f"card{index:02d}.mp4"
-
-    args: list[str | Path] = ["-loop", "1", "-t", str(card.duration), "-i", image]
-    if audio and audio.is_file():
-        args += ["-i", audio]
-    else:
-        args += ["-f", "lavfi", "-t", str(card.duration), "-i", "anullsrc=cl=stereo:r=48000"]
-
-    ffmpeg(
-        args
-        + [
-            "-vf",
-            f"scale={cfg.out_w}:{cfg.out_h},fps={cfg.out_fps},format=yuv420p",
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", str(cfg.draft_crf),
-            "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
-            "-shortest",
-            out,
-        ]
-    )
-    return out
-
-
-def overlay_graph(overlays: list[tuple[Overlay, Path]], fade: float = 0.25) -> str:
-    """Build the filtergraph that lays every overlay onto the assembled video.
-
-    One chain, one encode. A list card also blurs and dims what is behind it — both are
-    timeline-enabled filters, so they switch on for exactly the card's span.
-    """
-    if not overlays:
-        return ""
-    chain: list[str] = []
-    current = "0:v"
-
-    # blur and dim first, so the card is drawn over an already-quietened picture
-    for index, (overlay, _) in enumerate(overlays):
-        if overlay.kind != "list":
-            continue
-        window = f"between(t,{overlay.start},{overlay.end})"
-        label = f"blur{index}"
-        chain.append(
-            f"[{current}]gblur=sigma={LIST_BLUR}:enable='{window}',"
-            f"eq=brightness={LIST_DARKEN}:saturation={LIST_DESATURATE}:enable='{window}'[{label}]"
-        )
-        current = label
-
-    for index, (overlay, _) in enumerate(overlays):
-        # A hard cut on a text panel reads as a glitch; a quarter-second fade reads as a
-        # deliberate card.
-        #
-        # The fade times are ABSOLUTE: apply_overlays shifts each PNG to its own start with
-        # `-itsoffset`, so its frames carry the finished timeline's timestamps. A PNG fed
-        # as a single frame would stay at alpha zero — `fade=t=in` would never be reached —
-        # which is exactly what shipped once: every overlay invisible in a six-minute
-        # render and nothing in the logs said so. Hence the loop, bounded to the overlay.
-        alpha = (
-            f"format=rgba,fade=t=in:st={overlay.start}:d={fade}:alpha=1,"
-            f"fade=t=out:st={max(overlay.start, overlay.end - fade)}:d={fade}:alpha=1"
-        )
-        faded = f"ov{index}"
-        chain.append(f"[{index + 1}:v]{alpha}[{faded}]")
-        label = f"v{index}"
-        chain.append(
-            # eof_action=pass: once this PNG has run out, the picture goes on untouched —
-            # the default repeats its last frame over the rest of the video.
-            f"[{current}][{faded}]overlay=0:0:eof_action=pass"
-            f":enable='between(t,{overlay.start},{overlay.end})'"
-            f"[{label}]"
-        )
-        current = label
-
-    return ";".join(chain) + f";[{current}]null[out]"
-
-
-def apply_overlays(ep: Episode, source: Path, layout: SlidePlan, out: Path) -> Path:
-    """Composite every overlay onto `source`, in one encode."""
-    if not layout.overlays:
-        if source != out:
-            out.write_bytes(source.read_bytes())
-        return out
-
-    _, images = render_all(ep, layout)
-    rendered = list(zip(layout.overlays, images, strict=True))
-
-    inputs: list[str | Path] = ["-i", source]
-    for overlay, image in rendered:
-        # Each PNG lives only for its own window, placed there by -itsoffset. It used to be
-        # looped over the whole video, from second zero: eleven endless 2560x1600 RGBA
-        # streams, decoded and faded for twenty minutes to be shown for a few seconds each,
-        # and ffmpeg queued them faster than the overlay consumed them — 7 GB and rising
-        # on a 21-minute episode, until the run was killed.
-        inputs += [
-            "-framerate", str(ep.cfg.out_fps), "-loop", "1",
-            "-t", f"{overlay.duration:.3f}", "-itsoffset", f"{overlay.start:.3f}",
-            "-i", image,
-        ]
-
-    log(f"compositing {len(rendered)} overlays")
-    ffmpeg(
-        inputs
-        + [
-            "-filter_complex", overlay_graph(rendered),
-            "-map", "[out]", "-map", "0:a?",
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", str(ep.cfg.draft_crf),
-            "-pix_fmt", "yuv420p", "-c:a", "copy",
-            out,
-        ]
-    )
-    return out
-
-
 def generate_music(ep: Episode, layout: SlidePlan, plan_meta) -> dict[str, Path]:
-    """The tracks under the cards, generated once and reused by both renderers."""
+    """The tracks under the cards, generated before the project that points at them."""
     # The sung lines come from `jingle`; the card titles are the fallback for an EDL
     # produced before that field existed.
     return music.build_tracks(
@@ -190,49 +62,3 @@ def generate_music(ep: Episode, layout: SlidePlan, plan_meta) -> dict[str, Path]
         outro_lyrics=plan_meta.jingle.get("outro")
         or (plan_meta.outro.title if plan_meta.outro else ""),
     )
-
-
-def apply_music(ep: Episode, source: Path, layout: SlidePlan, plan_meta, out: Path) -> Path:
-    """Mix the generated tracks under the video.
-
-    Music is the normal case, so a failure here STOPS the run. This used to be the
-    opposite — the absence was logged and the render shipped silent — and that is the
-    wrong trade: a video that was meant to have music and quietly does not is a video that
-    gets published before anyone notices. Not wanting music is a decision, and it is taken
-    with MUSIC="off" in config.env or `--no-music`, which skips this step entirely.
-    """
-    if not ep.cfg.music:
-        log("music disabled (--no-music)")
-        if source != out:
-            out.write_bytes(source.read_bytes())
-        return out
-
-    tracks = generate_music(ep, layout, plan_meta)
-
-    bed_duration = ffprobe_duration(tracks["bed"]) if "bed" in tracks else 0.0
-    beds = music.with_gains(
-        music.plan_beds(layout, tracks, bed_duration),
-        tracks,
-        ep.cfg.audio_lufs,
-        loudness_lufs,
-    )
-    if not beds:
-        if source != out:
-            out.write_bytes(source.read_bytes())
-        return out
-
-    inputs: list[str | Path] = ["-i", source]
-    for bed in beds:
-        inputs += ["-i", bed.track]
-
-    log(f"music: mixing {len(beds)} beds")
-    ffmpeg(
-        inputs
-        + [
-            "-filter_complex", music.mix_filter(beds),
-            "-map", "0:v", "-map", "[aout]",
-            "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
-            out,
-        ]
-    )
-    return out

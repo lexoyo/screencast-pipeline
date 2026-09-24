@@ -24,7 +24,6 @@ from . import (
     montage,
     publish,
     qc,
-    render,
     shotcut,
     silences,
     slideplan,
@@ -65,7 +64,7 @@ STAGES = (
 TOOLS = {
     "ffmpeg": "everything — measuring, cutting, rendering",
     "ffprobe": "reading durations",
-    "melt-7": "rendering the Shotcut project (RENDERER=melt only; Shotcut itself does not need it)",
+    "melt-7": "rendering the video — it plays the Shotcut project (Shotcut itself is not needed)",
 }
 
 
@@ -126,10 +125,7 @@ def run_stage(name: str, ep: Episode) -> None:
     elif name == "render":
         plan = _plan(ep)
         layout = slideplan.build(plan, plan.kept, channel=CHANNEL.as_values())
-        if ep.cfg.renderer == "melt":
-            shotcut.render(ep, plan, layout)
-        else:
-            render.run(ep, plan, layout)
+        shotcut.render(ep, plan, layout)
     elif name == "shotcut":
         plan = _plan(ep)
         shotcut.run(ep, plan, slideplan.build(plan, plan.kept, channel=CHANNEL.as_values()))
@@ -271,8 +267,8 @@ def check_tools(cfg) -> list[str]:
         missing.append(f"whisper model: {cfg.whisper_model}")
     if not which(cfg.claude_bin) and not Path(cfg.claude_bin).is_file():
         missing.append(f"the montage brain: {cfg.claude_bin}")
-    if cfg.renderer == "melt" and not which(cfg.melt_bin):
-        missing.append(f"melt: {cfg.melt_bin} (or RENDERER=ffmpeg)")
+    if not which(cfg.melt_bin):
+        missing.append(f"melt: {cfg.melt_bin}")
     if cfg.music and not which(cfg.sonorita_bin):
         missing.append(f"sonorita-cli: {cfg.sonorita_bin} (or run with --no-music)")
     return missing
@@ -414,10 +410,6 @@ def main(argv: list[str] | None = None) -> int:
         help="skip the music under the cards (sonorita-cli is then not needed)",
     )
     parser.add_argument(
-        "--renderer", choices=("ffmpeg", "melt"), default=None,
-        help="who renders draft.mp4 — overrides RENDERER (melt = the Shotcut project)",
-    )
-    parser.add_argument(
         "--lang", default=None, metavar="CODE",
         help="spoken language for this run ('en', 'fr', 'auto') — overrides FORCE_LANG",
     )
@@ -451,8 +443,6 @@ def main(argv: list[str] | None = None) -> int:
             overrides["FORCE_LANG"] = args.lang
         if args.no_music:
             overrides["MUSIC"] = "off"
-        if args.renderer:
-            overrides["RENDERER"] = args.renderer
         cfg = load(
             Path(args.config) if args.config else default_config_path(),
             overrides=overrides or None,

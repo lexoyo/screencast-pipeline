@@ -52,7 +52,6 @@ class Config:
     whisper_model: Path
     claude_bin: str
     melt_bin: str
-    renderer: str
     sonorita_bin: str
     force_lang: str
     music: bool
@@ -172,12 +171,6 @@ def load(config_path: Path, overrides: dict[str, str] | None = None) -> Config:
     if mic_source not in ("screen", "face"):
         raise ConfigError(f"config.env: MIC_SOURCE={mic_source!r} must be 'screen' or 'face'")
 
-    # Who makes draft.mp4: ffmpeg directly, or melt-7 playing the Shotcut project. The
-    # second is on trial — if it gives the same video, the edit can move to Shotcut.
-    renderer = _get(raw, "RENDERER", "melt")
-    if renderer not in ("ffmpeg", "melt"):
-        raise ConfigError(f"config.env: RENDERER={renderer!r} must be 'ffmpeg' or 'melt'")
-
     pip_corner = _get(raw, "PIP_CORNER", "br")
     if pip_corner not in ("br", "bl", "tr", "tl"):
         raise ConfigError(f"config.env: PIP_CORNER={pip_corner!r} must be one of br/bl/tr/tl")
@@ -189,7 +182,6 @@ def load(config_path: Path, overrides: dict[str, str] | None = None) -> Config:
         # chemin vers un wrapper, et celui-là s'écrit avec $HOME comme les autres.
         claude_bin=os.path.expandvars(_get(raw, "CLAUDE_BIN", "claude")),
         melt_bin=_get(raw, "MELT_BIN", "melt-7"),
-        renderer=renderer,
         sonorita_bin=_get(raw, "SONORITA_BIN", "sonorita-cli"),
         force_lang=_get(raw, "FORCE_LANG", ""),
         music=_flag(raw, "MUSIC", "on"),

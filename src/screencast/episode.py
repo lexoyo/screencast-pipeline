@@ -92,10 +92,6 @@ class Episode:
         return self.root / "work"
 
     @property
-    def segdir(self) -> Path:
-        return self.work / "seg"
-
-    @property
     def slidedir(self) -> Path:
         return self.work / "slides"
 
@@ -152,10 +148,6 @@ class Episode:
     @property
     def draft(self) -> Path:
         return self.work / "draft.mp4"
-
-    @property
-    def concat_list(self) -> Path:
-        return self.work / "concat.txt"
 
     @property
     def project(self) -> Path:

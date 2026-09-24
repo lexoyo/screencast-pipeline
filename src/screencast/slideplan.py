@@ -9,7 +9,7 @@ Two kinds, and the distinction drives everything downstream:
   nothing. They ride on the shot underneath, so the speaker stays visible and the running
   time is untouched.
 
-Positions are computed here, once, so that the renderer, the Shotcut project and the
+Positions are computed here, once, so that the Shotcut project and the
 chapter list all read the same numbers instead of each deriving their own.
 """
 
@@ -98,7 +98,7 @@ class SlidePlan:
     cards: list[Card] = field(default_factory=list)
     overlays: list[Overlay] = field(default_factory=list)
     theme: str = DEFAULT_THEME
-    """The channel's palette, carried here because the plan is what the renderers read.
+    """The channel's palette, carried here because the plan is what the project reads.
 
     It used to stop at the channel file: `slides.render` has always taken a `theme`, and
     nothing ever passed one, so every channel rendered in the default palette. Invisible

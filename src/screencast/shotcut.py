@@ -1,15 +1,15 @@
-"""Emit an editable Shotcut project alongside the rendered draft — and render it, if asked.
+"""The Shotcut project: the edit itself, and what melt-7 plays to render the video.
 
 One track per shot type, on purpose. A Size/Position/Rotate filter sits on the track head,
 so reframing the close-up means adjusting one filter rather than thirty clips — the wide
 shot once, the close-up once, for the whole project. The camera correction measured by the
 `measure` stage sits there too, for the same reason.
 
-The project used to be a sketch of the export: same cuts, but none of the corrections, no
-fades, no blur behind the list cards, the voice unlevelled. Opening it in Shotcut showed a
-different video from final.mp4. It now carries everything render.py does, so that it can be
-rendered with melt-7 instead of ffmpeg (RENDERER="melt") and give the same video — which is
-the test of whether the whole edit can move to Shotcut.
+The video used to be rendered by ffmpeg, with the project a sketch beside it: same cuts, but
+none of the corrections, no fades, no blur behind the list cards. Opening it in Shotcut
+showed a different video from final.mp4. The project now carries all of it and IS the
+render — one description of the edit, so the two cannot disagree. Compared on a 21-minute
+episode, the ffmpeg concatenation also drifted half a second by the end; melt does not.
 
 Everything is laid out in FRAMES, not seconds. MLT reads a playlist entry's `out` as the
 last frame played, inclusive: writing the end time there made every entry one frame too
@@ -52,7 +52,7 @@ def cover_rect(source: tuple[int, int] | None, out_w: int, out_h: int,
     """The qtblend rect that frames a source the way ffmpeg's `fill` filter does.
 
     qtblend has no aspect-preserving mode — it stretches whatever it is given into the
-    rect. render.py instead scales the source up until it covers the frame and crops the
+    rect. ffmpeg's `fill` instead scales the source up until it covers the frame and crops the
     overflow. Writing the frame itself as the rect therefore made the two disagree the day
     the camera stopped sharing the frame's aspect: Shotcut showed the speaker 11% wider
     than final.mp4 did. Enlarging the rect past the frame edges reproduces the crop, since
@@ -128,8 +128,8 @@ def parse_chain(chain: str) -> list[tuple[str, dict[str, str]]]:
 def av_filters(chain: str) -> list[str]:
     """ffmpeg filters as MLT avfilter.* services, options unchanged.
 
-    The same libavfilter code runs in both renderers, so the correction measured once
-    applies identically — and Shotcut keeps the filters it has no panel for.
+    The correction is measured with ffmpeg and runs as the same libavfilter code in MLT, so
+    it applies identically — and Shotcut keeps the filters it has no panel for.
     """
     return [
         _filter(f"avfilter.{name}", {f"av.{k}": v for k, v in options.items()})
@@ -262,7 +262,7 @@ def _frame(seconds: float, fps: int) -> int:
 def body_clips(kept, *, fps: int, offset: float, has_face: bool, mic_from_face: bool,
                body_offset: float = 0.0, gap_after: int | None = None,
                gap_length: float = 0.0) -> list[Clip]:
-    """Where every kept segment lands, per track, exactly as render.run concatenates them.
+    """Where every kept segment lands, per track, end to end in the order of the edit.
 
     Positions are rounded from the running time in seconds rather than summed from rounded
     lengths, so a long edit never drifts from the float timestamps the slide plan uses.
@@ -276,11 +276,11 @@ def body_clips(kept, *, fps: int, offset: float, has_face: bool, mic_from_face: 
         if length > 0:
             if seg.scene == "ecran" or not has_face:
                 # `face` absent on a screen-only shoot: a stale EDL naming a camera shot
-                # must still show the screen, as render.py does.
+                # must still show the screen.
                 clips.append(Clip("ecran", "screen_v", _frame(seg.start, fps), at, length))
             else:
-                # Opening words: the camera was not recording yet. render.py freezes its
-                # first frame for the lead-in (tpad clone); face_lead is that frozen frame.
+                # Opening words: the camera was not recording yet. Its first frame is
+                # frozen for the lead-in; face_lead is that frozen frame.
                 lead = min(length, _frame(max(0.0, offset - seg.start), fps))
                 if lead:
                     clips.append(Clip(seg.scene, "face_lead", 0, at, lead))
@@ -288,8 +288,8 @@ def body_clips(kept, *, fps: int, offset: float, has_face: bool, mic_from_face: 
                     clips.append(Clip(seg.scene, "face_v",
                                       _frame(max(0.0, seg.start - offset), fps),
                                       at + lead, length - lead))
-            # MIC_SOURCE=face reads the camera's audio at SCREEN timestamps, like
-            # render._segment_graph does ([1:a]atrim=seg.start:seg.end).
+            # MIC_SOURCE=face reads the camera's audio at SCREEN timestamps, as the old
+            # ffmpeg render did — kept as is, though it ignores the camera offset.
             clips.append(Clip("audio", "face_a" if mic_from_face else "screen_a",
                               _frame(seg.start, fps), at, length))
         if gap_after is not None and index == gap_after:
@@ -392,7 +392,7 @@ def _slide_track(entries: list[tuple[int, float, float]], fps: int = 30) -> list
     """Lay slides on their own track, separated by blanks.
 
     Entries are (producer index, start, end) in FINAL seconds — the same numbers the
-    renderer used, so the project and the export agree.
+    slide plan uses, so every slide lands where the plan put it.
     """
     rows: list[str] = []
     cursor = 0
@@ -616,7 +616,7 @@ def build(ep: Episode, plan: Edl, layout: SlidePlan | None = None) -> str:
     )
 
     # Track heads: the framing, and the correction measured on the camera. Correction
-    # first, as in render._segment_graph, so it works on the camera's own pixels.
+    # first, so it works on the camera's own pixels.
     correction = av_filters(params.get("video_filter", "")) if face else []
     screen_head = (
         [_size_position(cover_rect(scr, cfg.out_w, cfg.out_h))]
@@ -692,7 +692,7 @@ def run(ep: Episode, plan: Edl, layout: SlidePlan | None = None) -> None:
 
 def melt_command(ep: Episode, project: Path, out: Path, *,
                  start: float | None = None, end: float | None = None) -> list[str | Path]:
-    """melt-7 rendering `project` with the encoder settings render.py uses.
+    """melt-7 rendering `project`: x264 veryfast at DRAFT_CRF, yuv420p, OUT_FPS.
 
     `real_time=-1`: one rendering thread, frames in order. Parallel frame rendering
     (Shotcut's default export) hands consecutive audio blocks to different threads, and
@@ -718,10 +718,10 @@ def melt_command(ep: Episode, project: Path, out: Path, *,
 
 def render(ep: Episode, plan: Edl, layout: SlidePlan | None = None, *,
            project: Path | None = None, out: Path | None = None) -> Path:
-    """The `render` stage when RENDERER="melt": write the project, play it, master the sound.
+    """The `render` stage: write the project, play it, master the sound.
 
     The music has to exist before the project is written, since the project only points
-    at it; the ffmpeg path generates it last, the melt path first.
+    at it.
     """
     project = project or ep.project
     out = out or ep.draft
