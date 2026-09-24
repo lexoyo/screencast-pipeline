@@ -20,7 +20,7 @@ from .transcribe import whisper_json
 
 def run_stage(ep: Episode, prompts_dir: Path, title: str = "") -> None:
     cfg = ep.cfg
-    ep.need(ep.draft, "run the draft stage first")
+    ep.need(ep.draft, "run the render stage first")
     ep.subs_dir.mkdir(parents=True, exist_ok=True)
 
     source_lang = ep.language()

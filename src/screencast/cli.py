@@ -62,7 +62,7 @@ STAGES = (
 
 # Every external binary the harness drives, and what stops working without it.
 TOOLS = {
-    "ffmpeg": "everything — measuring, cutting, rendering",
+    "ffmpeg": "measuring, the silences, the subtitles' audio, the audio master",
     "ffprobe": "reading durations",
     "melt-7": "rendering the video — it plays the Shotcut project (Shotcut itself is not needed)",
 }

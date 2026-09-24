@@ -149,8 +149,8 @@ def _num(raw: dict[str, str], key: str, default: str, cast, unit: str = "") -> f
 def load(config_path: Path, overrides: dict[str, str] | None = None) -> Config:
     """Load config.env, apply overrides, validate.
 
-    `overrides` exists for one case: nouvelle-video.sh knows which container OBS actually
-    produced (.mkv/.mp4/.mov) and must win over the default written in config.env.
+    `overrides` carries the command line's --lang and --no-music, which win over what
+    config.env says for this run only.
     """
     if not config_path.is_file():
         raise ConfigError(f"{config_path} not found — copy config.env.example to config.env first")
@@ -218,5 +218,5 @@ def load(config_path: Path, overrides: dict[str, str] | None = None) -> Config:
 
 
 def describe(cfg: Config) -> str:
-    """One line per setting — what `scast doctor` prints."""
+    """One line per setting — what `screencast doctor` prints."""
     return "\n".join(f"  {f.name:18s} {getattr(cfg, f.name)}" for f in fields(cfg))

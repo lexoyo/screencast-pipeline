@@ -5,9 +5,9 @@ own: MLT's `dynamic_loudness` is not loudnorm (the 23/09 take came out at -15.8 
 against -16), and its limiter counts SAMPLES — between two samples, and again once AAC
 has encoded them, the waveform rose to +1.5 dBFS on that same take.
 
-So the mix leaves melt with lossless audio, and ffmpeg does what the ffmpeg path does:
-two-pass loudnorm (measure, then apply the measurement with linear=true) to AUDIO_LUFS /
-AUDIO_TP / AUDIO_LRA. The picture is copied, never re-encoded — the pass costs seconds.
+So the mix leaves melt with lossless audio, and ffmpeg finishes it: two-pass loudnorm
+(measure, then apply the measurement with linear=true) to AUDIO_LUFS / AUDIO_TP /
+AUDIO_LRA. The picture is copied, never re-encoded — the pass costs seconds.
 
 Then the result is MEASURED, after AAC, with ebur128's true-peak meter. AAC can push a
 peak back over a ceiling loudnorm had respected; when it does, the pass is redone with the
@@ -46,8 +46,8 @@ def loudnorm_filter(lufs: float, tp: float, lra: float, measured: dict[str, str]
     """The second pass: loudnorm fed what the first one measured.
 
     With the measurements it applies one constant gain when that gain fits under the
-    ceiling, and falls back to its own dynamic mode otherwise — the same decision the
-    ffmpeg path makes in measure.audio_filter.
+    ceiling, and falls back to its own dynamic mode otherwise — the same decision
+    measure.audio_filter makes for the voice chain.
     """
     target = f"loudnorm=I={lufs}:TP={tp:.2f}:LRA={lra}"
     if not measured:

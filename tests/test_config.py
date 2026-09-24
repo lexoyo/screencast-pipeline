@@ -114,7 +114,7 @@ def test_zoom_scale_must_actually_zoom(tmp_path):
 
 
 def test_overrides_win_over_the_file(tmp_path):
-    # nouvelle-video.sh knows the real container; config.env only holds a default
+    # `new` knows the real container; config.env only holds a default
     cfg = load(
         _write(tmp_path, MINIMAL + 'SCREEN_FILE="screen.mkv"\n'),
         overrides={"SCREEN_FILE": "screen.mp4"},

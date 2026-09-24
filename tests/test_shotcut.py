@@ -87,12 +87,12 @@ def test_no_music_means_no_rows():
 
 
 def test_a_bed_fades_in_and_out_like_the_export():
-    # music.mix_filter fades 0.5 s in and 1.2 s out; the project has to sound the same
+    # music.FADE_IN and FADE_OUT: 0.5 s in, 1.2 s out
     xml = _music_producers([INTRO])
     assert 'name="level">0=-60;15=0;143=0;179=-60' in xml
 
 
-# --- fidelity to the ffmpeg render -------------------------------------------------
+# --- frames, the voice chain, the list cards ---------------------------------------
 
 MEASURED = (
     "highpass=f=80,afftdn=nf=-25:tn=1,loudnorm=I=-16.0:TP=-1.5:LRA=11.0:measured_I=-16.29"

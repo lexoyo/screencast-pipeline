@@ -40,7 +40,7 @@ system compiler is newer than nvcc accepts.
 | | |
 |---|---|
 | `claude` | the model that decides the edit — install and authenticate it yourself |
-| `sonorita-cli` | the music under the cards — separate RPM. Without it, the video is simply made without music, and says so |
+| `sonorita-cli` | the music under the cards — separate RPM. Without it the run stops, unless music is off (see [Music](#music)) |
 
 **Chromium is never touched**: it ships with Fedora, it renders the slides, and pulling a
 second copy would add Node and 150 MB for a job `chromium-browser --headless` does in
@@ -70,7 +70,7 @@ You record **two frame-synced files** in one OBS take:
 | File | What |
 |---|---|
 | `final.mp4` | the edited video — this is what you publish |
-| `project.mlt` | an editable 3-track Shotcut project |
+| `project.mlt` | the editable Shotcut project the video was rendered from |
 | `final.<lang>.srt` | subtitles, native + translation |
 | `metadata.txt` | title, description, tags, timestamped chapters |
 | `metadata.<lang>.txt` | the same, translated, for the platform's per-language fields |
@@ -134,7 +134,7 @@ deliverable always ships the spoken language **plus one translation** — subtit
 transcript and metadata — and which one that is follows from it. FR shoots translate to
 EN, EN shoots to FR.
 
-## The eight stages
+## The nine stages
 
 | Stage | Tool | Decides / produces |
 |---|---|---|
@@ -142,10 +142,11 @@ EN, EN shoots to FR.
 | `transcribe` | whisper.cpp | transcript with word-level timings |
 | `silences` | ffmpeg | the quiet gaps, from the signal |
 | `montage` | a model | the edit: cuts, shots, chapters, metadata — **from the text alone** |
-| `render` | melt-7, playing the Shotcut project | `final.mp4` |
-| `shotcut` | — | `project.mlt` |
+| `render` | Chromium, sonorita-cli, melt-7, ffmpeg | the slides, the music, `project.mlt`, and the video it plays to (`work/draft.mp4`) |
+| `shotcut` | Chromium | `project.mlt` again, without playing it — `render` already wrote it |
 | `subtitles` | whisper.cpp + a model | native `.srt` + translation |
-| `publish` | — | packages the deliverable; **gated, uploads nothing** |
+| `publish` | a model | packages the deliverable, the translated metadata and the transcript; **uploads nothing** |
+| `qc` | a model | proof-reads the copy, mechanically then editorially; reports, never blocks |
 
 Run one at a time while iterating — a full run takes minutes, and you should not have to
 re-transcribe five minutes of audio to test a render:
@@ -227,8 +228,9 @@ they are: the project references them by path.
 The project carries the whole edit — the measured camera correction on the camera tracks,
 the voice chain on the mic track, the blur behind the list cards, the overlay fades, the
 music levels and fades — and it IS the render: the `render` stage writes `project.mlt` and
-plays it to `draft.mp4` with `melt-7`, so what you open in Shotcut is exactly what was
-exported. There used to be a separate ffmpeg render; it drifted half a second against the
+plays it to `work/draft.mp4` with `melt-7` — `publish` copies it to `final.mp4` — so what
+you open in Shotcut is exactly what was exported. There used to be a separate ffmpeg
+render; it drifted half a second against the
 edit over 21 minutes, and needed 7 GB to lay the slides on. melt hands the mix over
 lossless and one audio-only ffmpeg pass masters it — two-pass loudnorm to `AUDIO_LUFS`, the
 true peak checked after the AAC encode — with the picture copied, not re-encoded.
@@ -260,16 +262,16 @@ shoot. The external binaries it drives are the only requirement, and `doctor` ch
 Nothing is installed — `./screencast` puts `src/` on the import path and runs.
 
 ```bash
-uvx pytest        # 47 tests, well under a second
-ruff check .
-ruff format .
+uv run --extra dev pytest -q      # a few seconds
+uv run ruff check src tests
 ```
 
 Tests cover the pure functions: timecodes, chapter remapping, config parsing, cleanup of
-model output. Those are the ones that fail **silently** — a wrong timecode crashes
-nothing, it just puts the chapters in the wrong place and nobody notices until the video
-is public. Anything that shells out to ffmpeg is verified by running the harness on a real
-rush, never by mocking a subprocess.
+model output, the cuts, the slide plan, the pieces of the Shotcut project. Those are the
+ones that fail **silently** — a wrong timecode crashes nothing, it just puts the chapters
+in the wrong place and nobody notices until the video is public. Anything that shells out
+to ffmpeg or melt is verified by running the harness on a real rush, never by mocking a
+subprocess.
 
 ## License
 

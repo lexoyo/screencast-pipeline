@@ -158,7 +158,7 @@ def audio_filters(chain: str) -> list[str]:
       `dynamic_loudness`, Shotcut's "Normalize: One Pass", aiming at the same target.
 
     The window is 10 s, not the 3 s default. Measured on the first five minutes of the
-    2026-09-23 take against the ffmpeg render (-16.0 LUFS, LRA 5.9): 3 s pumps the pauses
+    2026-09-23 take against the old ffmpeg render (-16.0 LUFS, LRA 5.9): 3 s pumps the pauses
     up and lands at -15.2 LUFS; 10 s gives -15.9, LRA 6.6. A plain constant gain gave
     -16.6 and LRA 7.4 — ffmpeg's dynamic mode compresses, and a gain does not.
 
@@ -291,7 +291,8 @@ def body_clips(kept, *, fps: int, offset: float, has_face: bool, mic_from_face: 
                                       _frame(max(0.0, seg.start - offset), fps),
                                       at + lead, length - lead))
             # MIC_SOURCE=face reads the camera's audio at SCREEN timestamps, as the old
-            # ffmpeg render did — kept as is, though it ignores the camera offset.
+            # ffmpeg render did — kept as is, though it ignores the camera offset: every
+            # cut then lands off by that offset.
             clips.append(Clip("audio", "face_a" if mic_from_face else "screen_a",
                               _frame(seg.start, fps), at, length))
         if gap_after is not None and index == gap_after:
@@ -302,8 +303,8 @@ def body_clips(kept, *, fps: int, offset: float, has_face: bool, mic_from_face: 
 def split_windows(clips: list[Clip], windows: list[tuple[int, int]]) -> list[Clip]:
     """Cut the picture clips at the list cards' edges, and tag what plays behind them.
 
-    The export blurs the composite for exactly the card's span; a producer filter can only
-    blur a whole clip, so the clips are cut to that span first.
+    The picture is blurred for exactly the card's span; a producer filter can only blur a
+    whole clip, so the clips are cut to that span first.
     """
     out: list[Clip] = []
     for clip in clips:
@@ -418,12 +419,11 @@ def _slide_producers(images: list[Path], fades: list[int | None], fps: int) -> s
     """One producer per slide image.
 
     `qimage` is MLT's still-image service and it honours the alpha channel, which is what
-    lets an overlay sit on top of the picture in Shotcut exactly as it does in the export.
-    This is the whole reason the slides are PNGs rather than an ffmpeg drawtext: a filter
-    cannot be imported into a project, an image can.
+    lets an overlay sit on top of the picture. This is the whole reason the slides are PNGs
+    rather than an ffmpeg drawtext: a filter cannot be imported into a project, an image can.
 
     `fades[i]` is the overlay's length in frames when it fades (overlays), None for a card,
-    which cuts in and out like the concatenated segment it is in the export.
+    which cuts in and out: it replaces the picture rather than sitting on it.
     """
     hour = 3600 * fps
     rows = []
@@ -478,10 +478,9 @@ def hold_last_card(entries: list[tuple[int, float, float]], cards: int, video_en
 def _music_producers(beds, fps: int = 30) -> str:
     """One producer per bed, audio only, each carrying its own level and fades.
 
-    Not one per file. Two beds can read the same track at very different levels — the
-    music under a card sits at speech level, the bed under speech 18 dB below it — and in
-    MLT a filter attaches to a producer, never to a playlist entry. One producer per bed is
-    what lets each stretch keep the level the render gave it.
+    Not one per file. Two beds can read the same track at different levels, each measured
+    on its own stretch (music.with_gains), and in MLT a filter attaches to a producer, never
+    to a playlist entry. One producer per bed is what lets each stretch keep its own level.
     """
     hour = 3600 * fps
     return "\n".join(
@@ -633,10 +632,9 @@ def build(ep: Episode, plan: Edl, layout: SlidePlan | None = None) -> str:
     # the body, and a tractor ends with its longest track.
     ends = [c.end for c in clips] + [_frame(e, fps) for _, _, e in slide_entries]
     total = max(ends, default=1)
-    # The outro's music runs 1.4 s past the card (music.TAIL). The ffmpeg render mixes it
-    # onto a picture that has already ended, so a player holds the outro's last frame while
-    # it fades; here the tractor would run on into 1.4 s of black instead. Holding the last
-    # card to the end of the music is what the export looks like.
+    # The outro's music runs 1.4 s past the card (music.TAIL). The tractor would run on
+    # into 1.4 s of black while it fades; holding the last card to the end of the music
+    # keeps the outro on screen instead, as the old ffmpeg render did.
     music_end = max((_frame(bed.end, fps) for bed in music_beds), default=0)
     slide_entries = hold_last_card(slide_entries, len(layout.cards) if layout else 0,
                                    total, music_end, fps)
@@ -721,6 +719,11 @@ def build(ep: Episode, plan: Edl, layout: SlidePlan | None = None) -> str:
 
 
 def run(ep: Episode, plan: Edl, layout: SlidePlan | None = None) -> None:
+    """The `shotcut` stage: the project alone, rewritten without being played.
+
+    `render` already writes the same file before playing it; this only redraws the slides
+    and rewrites the project, for when the video itself is not wanted.
+    """
     log("emit Shotcut project")
     ep.project.write_text(build(ep, plan, layout))
     log(f"project -> {ep.project}")

@@ -1,7 +1,8 @@
 """The one place that answers: how far behind the screen does the camera start?
 
-Both the render and the Shotcut project need this number, and they used to compute it
-separately — which meant a fix could land in one and not the other. It lives here now.
+The ffmpeg render and the Shotcut project both needed this number, and they used to compute
+it separately — which meant a fix could land in one and not the other. It lives here, and
+the Shotcut project is now its only reader.
 """
 
 from __future__ import annotations

@@ -147,6 +147,7 @@ class Episode:
 
     @property
     def draft(self) -> Path:
+        """The rendered video, what `publish` ships as final.mp4. The name is historical."""
         return self.work / "draft.mp4"
 
     @property

@@ -132,10 +132,11 @@ def sanitize(
 def _absorb_subframe(timeline: list[Span], fps: int) -> tuple[list[Span], list[str]]:
     """Merge away kept spans too short to hold a single frame.
 
-    A 0.02 s span at 30 fps is shorter than one frame, and ffmpeg renders it as a file with
-    an audio track and NO VIDEO STREAM at all. `concat -c copy` then inherits a hole in the
-    picture: the image freezes while the sound keeps going, and it stays frozen long after
-    the two hundredths of a second that caused it. It shipped that way once, at 2:02.
+    A 0.02 s span at 30 fps is shorter than one frame. The old ffmpeg render made it a file
+    with an audio track and NO VIDEO STREAM at all, and `concat -c copy` then inherited a
+    hole in the picture: the image froze while the sound kept going, long after the two
+    hundredths of a second that caused it. It shipped that way once, at 2:02. A span that
+    holds no frame is still worth absorbing: it plays nothing.
 
     The span is absorbed into its neighbour rather than dropped, so the audio it carries is
     never lost — under a frame, which shot it is taken from cannot be seen.

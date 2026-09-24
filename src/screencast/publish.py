@@ -138,7 +138,7 @@ def translated_metadata_text(data: dict, rows: list[tuple[float, str]],
 
 
 def run(ep: Episode, plan: Edl, prompts_dir: Path | None = None, layout=None) -> None:
-    ep.need(ep.draft, "run the draft stage first")
+    ep.need(ep.draft, "run the render stage first")
     kept = load_kept(ep.kept)
     deliverable = ep.deliverable
     deliverable.mkdir(parents=True, exist_ok=True)
