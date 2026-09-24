@@ -237,7 +237,7 @@ def check(edl: Edl, duration: float, tol: float = 0.5) -> list[str]:
 
     holes = backwards = 0
     first = ""
-    for previous, following in zip(spans, spans[1:]):
+    for previous, following in zip(spans, spans[1:], strict=False):
         gap = following.start - previous.end
         if abs(gap) <= tol:
             continue
