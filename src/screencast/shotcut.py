@@ -705,18 +705,20 @@ def melt_command(ep: Episode, project: Path, out: Path, *,
         cmd.append(f"in={_frame(start, cfg.out_fps)}")
     if end is not None:
         cmd.append(f"out={_frame(end, cfg.out_fps) - 1}")
+    # The audio leaves melt LOSSLESS, in a Matroska: master.py normalises it and encodes it
+    # once. An AAC here would be encoded twice, and its overshoot measured as program.
     cmd += [
-        "-consumer", f"avformat:{out}",
+        "-consumer", f"avformat:{out}", "f=matroska",
         "vcodec=libx264", "preset=veryfast", f"crf={cfg.draft_crf}", "pix_fmt=yuv420p",
-        "acodec=aac", "ab=192k", "ar=48000", "channels=2",
-        "movflags=+faststart", "real_time=-1", "terminate_on_pause=1",
+        "acodec=pcm_f32le", "ar=48000", "channels=2",
+        "real_time=-1", "terminate_on_pause=1",
     ]
     return cmd
 
 
 def render(ep: Episode, plan: Edl, layout: SlidePlan | None = None, *,
            project: Path | None = None, out: Path | None = None) -> Path:
-    """The `render` stage when RENDERER="melt": write the project, then play it to a file.
+    """The `render` stage when RENDERER="melt": write the project, play it, master the sound.
 
     The music has to exist before the project is written, since the project only points
     at it; the ffmpeg path generates it last, the melt path first.
@@ -729,9 +731,14 @@ def render(ep: Episode, plan: Edl, layout: SlidePlan | None = None, *,
         compose.generate_music(ep, layout, plan.metadata)
     project.write_text(build(ep, plan, layout))
     log(f"project -> {project}")
+    from . import master
+
+    mix = out.with_name(out.stem + ".melt.mkv")
     partial = out.with_name(out.stem + ".part" + out.suffix)
-    log(f"melt -> {out}")
-    run_tool(melt_command(ep, project, partial), passthrough_stderr=True)
+    log(f"melt -> {mix}")
+    run_tool(melt_command(ep, project, mix), passthrough_stderr=True)
+    master.master(ep, mix, partial)
     partial.replace(out)  # a killed render never leaves a half file under the real name
+    mix.unlink()
     log(f"draft -> {out}")
     return out

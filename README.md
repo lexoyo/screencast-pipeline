@@ -228,8 +228,9 @@ The project carries everything the ffmpeg render does — the measured camera co
 the camera tracks, the voice chain on the mic track, the blur behind the list cards, the
 overlay fades, the music levels and fades — so it can also be *the* render:
 `RENDERER="melt"` in config.env (or `--renderer melt` for one run) makes the `render` stage
-write `project.mlt` and play it to `draft.mp4` with `melt-7`. On trial: if the two agree,
-the edit can move to Shotcut for good.
+write `project.mlt` and play it to `draft.mp4` with `melt-7`. melt hands the mix over
+lossless and one audio-only ffmpeg pass masters it — two-pass loudnorm to `AUDIO_LUFS`, the
+true peak checked after the AAC encode — with the picture copied, not re-encoded.
 
 ## Shooting notes, learned the hard way
 
