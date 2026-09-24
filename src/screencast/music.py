@@ -5,11 +5,10 @@ same shoot always produces the same music.
 
 Three things this module is careful about:
 
-**Instrumental where it matters.** Most sonorita vibes come with sung lyrics, in English.
-Under an overlay that sits on top of speech, a voice singing over the speaker is unusable,
-so the bed vibe is written with "no vocals, no humming, no drums" in its prompt. The intro
-and outro cards are the exception: nobody is speaking there, and a sung line is what makes
-a signature memorable — so they sing the video's own title.
+**Music only where nobody speaks.** Music plays under the intro and outro cards and
+nowhere else (see plan_beds). Most sonorita vibes come with sung lyrics, and here that is
+the point: nobody is speaking under a card, and a sung line is what makes a signature
+memorable — so they sing the video's own title.
 
 **A dedicated track per card.** The generator has a hard floor of 30 seconds (below it, it
 silently clamps: "durée 8s hors plage [30;210] → bornée à 30s"). We cannot ask for the four
@@ -25,7 +24,6 @@ than stapled on: cutting music exactly on the picture announces the edit.
 from __future__ import annotations
 
 import hashlib
-import shutil
 from dataclasses import dataclass, replace
 from pathlib import Path
 from string import Template
@@ -48,14 +46,6 @@ LEAD_IN = 0.6
 TAIL = 1.4
 FADE_IN = 0.5
 FADE_OUT = 1.2
-
-# Levels are TARGETS, not gains. A generated track's own loudness varies from one run to
-# the next, so a fixed multiplier gives a different result every time: 0.45 on the first
-# real track landed the intro at -27.7 LUFS against a body at -16, i.e. inaudible.
-#
-# A card plays alone and should sit where the voice sits. A bed plays under speech and is
-# placed well below it — 18 dB down is present without ever competing.
-CARD_LUFS_OFFSET = 0.0
 
 
 @dataclass(frozen=True)
@@ -146,18 +136,14 @@ def _merge(spans: list[tuple[float, float]]) -> list[tuple[float, float]]:
     return [(a, b) for a, b in merged]
 
 
-def target_for(bed: Bed, tracks: dict[str, Path], speech_lufs: float) -> float:
-    """Where this bed should land, in LUFS.
-
-    Every remaining bed plays under a card, where nobody is speaking, so they all target
-    the speech level itself: the music should feel as loud as the voice it replaces.
-    """
-    return speech_lufs + CARD_LUFS_OFFSET
-
-
-def with_gains(beds: list[Bed], tracks: dict[str, Path], speech_lufs: float, measure
-               ) -> list[Bed]:
+def with_gains(beds: list[Bed], speech_lufs: float, measure) -> list[Bed]:
     """Set each bed's gain from the loudness of the stretch it actually plays.
+
+    The level is a TARGET, not a gain. A generated track's own loudness varies from one
+    run to the next, so a fixed multiplier gives a different result every time: 0.45 on
+    the first real track landed the intro at -27.7 LUFS against a body at -16, i.e.
+    inaudible. Every bed plays under a card, where nobody is speaking, so each one targets
+    the speech level itself: the music should feel as loud as the voice it replaces.
 
     Per stretch, not per file: a track's average says little about the six seconds used
     under a card. Measuring the whole file put the first real intro at -23 LUFS against a
@@ -166,19 +152,16 @@ def with_gains(beds: list[Bed], tracks: dict[str, Path], speech_lufs: float, mea
     out: list[Bed] = []
     for bed in beds:
         measured = measure(bed.track, bed.source_offset, bed.duration)
-        gain = 0.0 if measured is None else target_for(bed, tracks, speech_lufs) - measured
+        gain = 0.0 if measured is None else speech_lufs - measured
         out.append(replace(bed, gain_db=gain))
     return out
 
 
-def plan_beds(layout: SlidePlan, tracks: dict[str, Path], bed_duration: float = 0.0,
-              gains: dict[str, float] | None = None) -> list[Bed]:
+def plan_beds(layout: SlidePlan, tracks: dict[str, Path]) -> list[Bed]:
     """Where music plays: under the cards, and nowhere else.
 
-    `bed_duration` is kept in the signature for callers that still pass it; there is no
-    bed any more.
+    Every bed starts at 0 dB; with_gains sets the level once the tracks can be measured.
     """
-    gains = gains or {}
     beds: list[Bed] = []
 
     for card in layout.cards:
@@ -188,7 +171,7 @@ def plan_beds(layout: SlidePlan, tracks: dict[str, Path], bed_duration: float = 
         start = max(0.0, card.start - LEAD_IN)
         beds.append(
             Bed(start=start, end=card.end + TAIL, track=track,
-                source_offset=0.0, gain_db=gains.get(card.kind, 0.0))
+                source_offset=0.0, gain_db=0.0)
         )
 
     # No bed under the speech. It used to play at -18 LUFS below the voice, which Alex put
@@ -197,35 +180,6 @@ def plan_beds(layout: SlidePlan, tracks: dict[str, Path], bed_duration: float = 
     # is not doing its job — and it cost a GPU generation per video. Silence under speech
     # also makes the blocking moments land harder, which is the whole point of a jingle.
     return sorted(beds, key=lambda b: b.start)
-
-
-def mix_filter(beds: list[Bed], first_input: int = 1) -> str:
-    """Filtergraph cutting, fading, attenuating and placing every bed, then mixing.
-
-    `amix` with normalize=0 keeps the speech at its own level: normalising would duck the
-    voice by however many beds happen to overlap it, which is not a mixing decision anyone
-    made.
-    """
-    if not beds:
-        return ""
-    parts: list[str] = []
-    labels: list[str] = []
-    for index, bed in enumerate(beds):
-        label = f"m{index}"
-        fade_out_at = max(0.0, bed.duration - FADE_OUT)
-        parts.append(
-            f"[{first_input + index}:a]"
-            f"atrim={bed.source_offset}:{bed.source_offset + bed.duration},"
-            f"asetpts=PTS-STARTPTS,"
-            f"afade=t=in:st=0:d={FADE_IN},afade=t=out:st={fade_out_at}:d={FADE_OUT},"
-            f"volume={bed.gain_db:.1f}dB,"
-            f"adelay={int(bed.start * 1000)}|{int(bed.start * 1000)}[{label}]"
-        )
-        labels.append(f"[{label}]")
-    parts.append(
-        f"[0:a]{''.join(labels)}amix=inputs={len(beds) + 1}:normalize=0:dropout_transition=0[aout]"
-    )
-    return ";".join(parts)
 
 
 def build_tracks(ep, layout: SlidePlan, intro_lyrics: str, outro_lyrics: str) -> dict[str, Path]:
@@ -244,7 +198,3 @@ def build_tracks(ep, layout: SlidePlan, intro_lyrics: str, outro_lyrics: str) ->
     # No bed track: see plan_beds. One generation less per video, too.
     return tracks
 
-
-def clear(ep) -> None:
-    """Drop the generated tracks so the next run makes new ones."""
-    shutil.rmtree(ep.work / "music", ignore_errors=True)

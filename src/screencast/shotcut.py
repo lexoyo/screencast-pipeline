@@ -577,14 +577,10 @@ def build(ep: Episode, plan: Edl, layout: SlidePlan | None = None) -> str:
         found = sorted((ep.work / "music").glob("*/*.mp3"))
         by_kind = {path.parent.name: path for path in found}
         if by_kind:
-            bed_dur = ffprobe_duration(by_kind["bed"]) if "bed" in by_kind else 0.0
-            # Same measurement as the render: without it every bed would sit at 0 dB and
-            # the project would not sound like the video it comes with.
+            # Measured, not assumed: without it every bed would sit at 0 dB, whatever
+            # level the generator happened to produce.
             music_beds = music_mod.with_gains(
-                music_mod.plan_beds(layout, by_kind, bed_dur),
-                by_kind,
-                cfg.audio_lufs,
-                loudness_lufs,
+                music_mod.plan_beds(layout, by_kind), cfg.audio_lufs, loudness_lufs,
             )
             music_beds.sort(key=lambda bed: bed.start)
 
