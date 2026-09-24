@@ -108,11 +108,6 @@ def test_bad_mic_source_is_rejected(tmp_path):
         load(_write(tmp_path, MINIMAL + 'MIC_SOURCE="webcam"\n'))
 
 
-def test_bad_pip_corner_is_rejected(tmp_path):
-    with pytest.raises(ConfigError, match="PIP_CORNER"):
-        load(_write(tmp_path, MINIMAL + 'PIP_CORNER="middle"\n'))
-
-
 def test_zoom_scale_must_actually_zoom(tmp_path):
     with pytest.raises(ConfigError, match="ZOOM_SCALE"):
         load(_write(tmp_path, MINIMAL + 'ZOOM_SCALE="1.0"\n'))

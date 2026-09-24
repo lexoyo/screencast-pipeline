@@ -71,20 +71,16 @@ class Config:
     face_offset: float | None
 
     # -- framing
-    pip_scale: float
-    pip_margin: int
-    pip_corner: str
     zoom_scale: float
 
     # -- list cards
-    list_blur: float
-    list_darken: float
+    # Parsed but read by nothing: a list card fades like every overlay, over
+    # shotcut.OVERLAY_FADE (0.25 s). Kept until Alex decides which of the two is right.
     list_fade: float
 
     # -- silence removal
     silence_db: str
     silence_min: float
-    silence_pad: float
 
     # -- output
     # None on either axis means "take it from the screen rush" — resolved by
@@ -171,10 +167,6 @@ def load(config_path: Path, overrides: dict[str, str] | None = None) -> Config:
     if mic_source not in ("screen", "face"):
         raise ConfigError(f"config.env: MIC_SOURCE={mic_source!r} must be 'screen' or 'face'")
 
-    pip_corner = _get(raw, "PIP_CORNER", "br")
-    if pip_corner not in ("br", "bl", "tr", "tl"):
-        raise ConfigError(f"config.env: PIP_CORNER={pip_corner!r} must be one of br/bl/tr/tl")
-
     cfg = Config(
         whisper_bin=path_of("WHISPER_BIN"),
         whisper_model=path_of("WHISPER_MODEL"),
@@ -193,16 +185,10 @@ def load(config_path: Path, overrides: dict[str, str] | None = None) -> Config:
         audio_lra=_num(raw, "AUDIO_LRA", "11", float),
         face_luma_target=_num(raw, "FACE_LUMA_TARGET", "120", float),
         face_offset=(float(raw["FACE_OFFSET"]) if raw.get("FACE_OFFSET") else None),
-        pip_scale=_num(raw, "PIP_SCALE", "0.22", float),
-        pip_margin=_num(raw, "PIP_MARGIN", "28", int),
-        pip_corner=pip_corner,
         zoom_scale=_num(raw, "ZOOM_SCALE", "1.4", float),
-        list_blur=_num(raw, "LIST_BLUR", "26", float),
-        list_darken=_num(raw, "LIST_DARKEN", "-0.14", float),
         list_fade=_num(raw, "LIST_FADE", "0.3", float),
         silence_db=_get(raw, "SILENCE_DB", "-30dB"),
         silence_min=_num(raw, "SILENCE_MIN", "0.6", float),
-        silence_pad=_num(raw, "SILENCE_PAD", "0.15", float),
         out_w=(_num(raw, "OUT_W", "0", int) if raw.get("OUT_W") else None),
         out_h=(_num(raw, "OUT_H", "0", int) if raw.get("OUT_H") else None),
         out_fps=_num(raw, "OUT_FPS", "30", int),
