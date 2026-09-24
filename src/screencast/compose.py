@@ -117,12 +117,11 @@ def overlay_graph(overlays: list[tuple[Overlay, Path]], fade: float = 0.25) -> s
         # A hard cut on a text panel reads as a glitch; a quarter-second fade reads as a
         # deliberate card.
         #
-        # The fade times are ABSOLUTE, which only works because each PNG is fed with
-        # `-loop 1` and therefore runs alongside the video from second zero. Without the
-        # loop a PNG is a single frame at t=0: `fade=t=in:st=29` would never be reached,
-        # the alpha would stay at zero, and the overlay would be fully transparent — which
-        # is exactly what shipped once. Every overlay was invisible in a six-minute render
-        # and nothing in the logs said so.
+        # The fade times are ABSOLUTE: apply_overlays shifts each PNG to its own start with
+        # `-itsoffset`, so its frames carry the finished timeline's timestamps. A PNG fed
+        # as a single frame would stay at alpha zero — `fade=t=in` would never be reached —
+        # which is exactly what shipped once: every overlay invisible in a six-minute
+        # render and nothing in the logs said so. Hence the loop, bounded to the overlay.
         alpha = (
             f"format=rgba,fade=t=in:st={overlay.start}:d={fade}:alpha=1,"
             f"fade=t=out:st={max(overlay.start, overlay.end - fade)}:d={fade}:alpha=1"
@@ -131,7 +130,10 @@ def overlay_graph(overlays: list[tuple[Overlay, Path]], fade: float = 0.25) -> s
         chain.append(f"[{index + 1}:v]{alpha}[{faded}]")
         label = f"v{index}"
         chain.append(
-            f"[{current}][{faded}]overlay=0:0:enable='between(t,{overlay.start},{overlay.end})'"
+            # eof_action=pass: once this PNG has run out, the picture goes on untouched —
+            # the default repeats its last frame over the rest of the video.
+            f"[{current}][{faded}]overlay=0:0:eof_action=pass"
+            f":enable='between(t,{overlay.start},{overlay.end})'"
             f"[{label}]"
         )
         current = label
@@ -150,9 +152,17 @@ def apply_overlays(ep: Episode, source: Path, layout: SlidePlan, out: Path) -> P
     rendered = list(zip(layout.overlays, images, strict=True))
 
     inputs: list[str | Path] = ["-i", source]
-    for _, image in rendered:
-        inputs += ["-loop", "1", "-i", image]  # see overlay_graph: the loop is what makes
-        # the absolute fade times reachable
+    for overlay, image in rendered:
+        # Each PNG lives only for its own window, placed there by -itsoffset. It used to be
+        # looped over the whole video, from second zero: eleven endless 2560x1600 RGBA
+        # streams, decoded and faded for twenty minutes to be shown for a few seconds each,
+        # and ffmpeg queued them faster than the overlay consumed them — 7 GB and rising
+        # on a 21-minute episode, until the run was killed.
+        inputs += [
+            "-framerate", str(ep.cfg.out_fps), "-loop", "1",
+            "-t", f"{overlay.duration:.3f}", "-itsoffset", f"{overlay.start:.3f}",
+            "-i", image,
+        ]
 
     log(f"compositing {len(rendered)} overlays")
     ffmpeg(
@@ -162,7 +172,6 @@ def apply_overlays(ep: Episode, source: Path, layout: SlidePlan, out: Path) -> P
             "-map", "[out]", "-map", "0:a?",
             "-c:v", "libx264", "-preset", "veryfast", "-crf", str(ep.cfg.draft_crf),
             "-pix_fmt", "yuv420p", "-c:a", "copy",
-            "-shortest",  # the looped PNGs are endless; the video decides the length
             out,
         ]
     )
